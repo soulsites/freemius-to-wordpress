@@ -25,32 +25,6 @@ class FSD_Dashboard {
 		);
 	}
 
-	/**
-	 * @return array{0: DateTimeImmutable, 1: DateTimeImmutable, 2: string} [from, to, ym]
-	 */
-	private function get_selected_month_range() {
-		$tz = wp_timezone();
-		$ym = isset( $_GET['fsd_month'] ) ? sanitize_text_field( wp_unslash( $_GET['fsd_month'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-
-		if ( ! preg_match( '/^\d{4}-\d{2}$/', $ym ) ) {
-			$ym = wp_date( 'Y-m' );
-		}
-
-		try {
-			$from_local = new DateTimeImmutable( $ym . '-01 00:00:00', $tz );
-		} catch ( Exception $e ) {
-			$from_local = new DateTimeImmutable( wp_date( 'Y-m' ) . '-01 00:00:00', $tz );
-			$ym         = $from_local->format( 'Y-m' );
-		}
-
-		$to_local = $from_local->modify( '+1 month' );
-
-		$from_utc = $from_local->setTimezone( new DateTimeZone( 'UTC' ) );
-		$to_utc   = $to_local->setTimezone( new DateTimeZone( 'UTC' ) );
-
-		return array( $from_utc, $to_utc, $ym );
-	}
-
 	private function get_cached_payments( DateTimeInterface $from, DateTimeInterface $to ) {
 		$cache_key = 'fsd_payments_' . md5( $from->format( 'c' ) . '|' . $to->format( 'c' ) );
 
@@ -189,7 +163,7 @@ class FSD_Dashboard {
 			return;
 		}
 
-		list( $from, $to, $ym ) = $this->get_selected_month_range();
+		list( $from, $to, $ym ) = FSD_Month_Filter::get_selected_range();
 
 		$payments = $this->get_cached_payments( $from, $to );
 
@@ -221,7 +195,7 @@ class FSD_Dashboard {
 		echo '<div class="fsd-card">';
 		echo '<div class="fsd-toolbar">';
 		echo '<h2 class="fsd-card__title">' . esc_html__( 'Käufe', 'freemius-dashboard' ) . '</h2>';
-		$this->render_month_filter( $ym );
+		FSD_Month_Filter::render( self::PAGE_SLUG, $ym );
 		echo '</div>';
 
 		if ( ! is_wp_error( $payments ) ) {
@@ -231,31 +205,6 @@ class FSD_Dashboard {
 		echo '</div>';
 
 		echo '</div>';
-	}
-
-	private function render_month_filter( $selected_ym ) {
-		echo '<form method="get" class="fsd-filter">';
-		echo '<input type="hidden" name="page" value="' . esc_attr( self::PAGE_SLUG ) . '" />';
-		echo '<select name="fsd_month" class="fsd-select" onchange="this.form.submit()">';
-
-		$tz     = wp_timezone();
-		$cursor = new DateTimeImmutable( 'first day of this month', $tz );
-
-		for ( $i = 0; $i < 12; $i++ ) {
-			$value = $cursor->format( 'Y-m' );
-			$label = date_i18n( 'F Y', $cursor->getTimestamp() );
-			printf(
-				'<option value="%s"%s>%s</option>',
-				esc_attr( $value ),
-				selected( $selected_ym, $value, false ),
-				esc_html( $label )
-			);
-			$cursor = $cursor->modify( '-1 month' );
-		}
-
-		echo '</select>';
-		echo '<noscript><button type="submit" class="fsd-btn fsd-btn--tonal">' . esc_html__( 'Anzeigen', 'freemius-dashboard' ) . '</button></noscript>';
-		echo '</form>';
 	}
 
 	private function render_table( $payments ) {

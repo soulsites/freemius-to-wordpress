@@ -23,6 +23,9 @@ class FSD_Plugin {
 	/** @var FSD_Dashboard */
 	private $dashboard;
 
+	/** @var FSD_Affiliates */
+	private $affiliates;
+
 	public static function instance() {
 		if ( null === self::$instance ) {
 			self::$instance = new self();
@@ -77,6 +80,15 @@ class FSD_Plugin {
 
 		add_submenu_page(
 			FSD_Dashboard::PAGE_SLUG,
+			__( 'Affiliates', 'freemius-dashboard' ),
+			__( 'Affiliates', 'freemius-dashboard' ),
+			$capability,
+			FSD_Affiliates::PAGE_SLUG,
+			array( $this, 'render_affiliates' )
+		);
+
+		add_submenu_page(
+			FSD_Dashboard::PAGE_SLUG,
 			__( 'E-Mails', 'freemius-dashboard' ),
 			__( 'E-Mails', 'freemius-dashboard' ),
 			$capability,
@@ -118,6 +130,13 @@ class FSD_Plugin {
 		<?php
 	}
 
+	public function render_affiliates() {
+		if ( null === $this->affiliates ) {
+			$this->affiliates = new FSD_Affiliates();
+		}
+		$this->affiliates->render();
+	}
+
 	public function render_emails() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
@@ -139,11 +158,12 @@ class FSD_Plugin {
 	}
 
 	public function enqueue_assets( $hook ) {
-		$dashboard_hook = 'toplevel_page_' . FSD_Dashboard::PAGE_SLUG;
-		$settings_hook  = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Settings::PAGE_SLUG;
-		$emails_hook    = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Email_Settings::PAGE_SLUG;
+		$dashboard_hook  = 'toplevel_page_' . FSD_Dashboard::PAGE_SLUG;
+		$settings_hook   = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Settings::PAGE_SLUG;
+		$affiliates_hook = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Affiliates::PAGE_SLUG;
+		$emails_hook     = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Email_Settings::PAGE_SLUG;
 
-		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $emails_hook ), true ) ) {
+		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $affiliates_hook, $emails_hook ), true ) ) {
 			return;
 		}
 

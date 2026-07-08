@@ -235,6 +235,21 @@
 	margin-left: 4px;
 }
 
+.fsd-chip--active {
+	background: var(--fsd-success-container);
+	color: var(--fsd-on-success-container);
+}
+
+.fsd-chip--pending {
+	background: var(--fsd-surface-variant);
+	color: var(--fsd-on-surface-variant);
+}
+
+.fsd-chip--blocked {
+	background: var(--fsd-error-container);
+	color: var(--fsd-error);
+}
+
 /* Totals */
 .fsd-totals {
 	display: flex;
