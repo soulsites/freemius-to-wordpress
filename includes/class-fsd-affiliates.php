@@ -16,9 +16,13 @@ class FSD_Affiliates {
 	/** @var FSD_Api */
 	private $api;
 
+	/** @var string */
+	private $terms_id;
+
 	public function __construct() {
-		$settings  = FSD_Settings::get_settings();
-		$this->api = new FSD_Api(
+		$settings       = FSD_Settings::get_settings();
+		$this->terms_id = $settings['affiliate_terms_id'];
+		$this->api      = new FSD_Api(
 			$settings['scope_id'],
 			$settings['public_key'],
 			$settings['secret_key'],
@@ -26,38 +30,46 @@ class FSD_Affiliates {
 		);
 	}
 
-	private function get_cached_affiliates( array $terms ) {
-		$cached = get_transient( 'fsd_affiliates' );
+	private function get_cached_affiliates() {
+		$cached = get_transient( 'fsd_affiliates_' . $this->terms_id );
 		if ( false !== $cached ) {
 			return $cached;
 		}
 
-		$affiliates = $this->api->get_affiliates( $terms );
+		$affiliates = $this->api->get_affiliates( $this->terms_id );
 
 		if ( is_wp_error( $affiliates ) ) {
 			return $affiliates;
 		}
 
-		set_transient( 'fsd_affiliates', $affiliates, self::CACHE_TTL );
+		set_transient( 'fsd_affiliates_' . $this->terms_id, $affiliates, self::CACHE_TTL );
 
 		return $affiliates;
 	}
 
-	private function get_cached_terms() {
-		$cached = get_transient( 'fsd_affiliate_terms' );
+	/**
+	 * Lädt die Provisionsbedingungen. Schlägt der Aufruf fehl, wird still ein leeres
+	 * Ergebnis zurückgegeben – die Partner-Liste soll auch ohne bekannten
+	 * Standard-Provisionssatz angezeigt werden (nur Custom-Provisionen fehlen dann).
+	 *
+	 * @return object|null
+	 */
+	private function get_cached_term() {
+		$cache_key = 'fsd_affiliate_term_' . $this->terms_id;
+		$cached    = get_transient( $cache_key );
 		if ( false !== $cached ) {
 			return $cached;
 		}
 
-		$terms = $this->api->get_affiliate_terms();
+		$term = $this->api->get_affiliate_term( $this->terms_id );
 
-		if ( is_wp_error( $terms ) ) {
-			return $terms;
+		if ( is_wp_error( $term ) ) {
+			return null;
 		}
 
-		set_transient( 'fsd_affiliate_terms', $terms, self::CACHE_TTL );
+		set_transient( $cache_key, $term, self::CACHE_TTL );
 
-		return $terms;
+		return $term;
 	}
 
 	private function get_cached_payments( DateTimeInterface $from, DateTimeInterface $to ) {
@@ -79,44 +91,28 @@ class FSD_Affiliates {
 		return $payments;
 	}
 
-	/**
-	 * Baut eine Terms-ID → Provisionssatz-Zuordnung. Freemius liefert die Provision je
-	 * nach API-Version unter leicht unterschiedlichen Feldnamen – wir prüfen die
-	 * gängigen Varianten der Reihe nach.
-	 *
-	 * @return array<int, float>
-	 */
-	private static function terms_commission_map( $terms ) {
-		$map = array();
-
-		if ( ! is_array( $terms ) ) {
-			return $map;
+	// Freemius liefert die Standard-Provision je nach API-Version unter leicht
+	// unterschiedlichen Feldnamen – wir prüfen die gängigen Varianten der Reihe nach.
+	private static function default_commission_rate( $term ) {
+		if ( ! is_object( $term ) ) {
+			return null;
 		}
 
-		foreach ( $terms as $term ) {
-			if ( ! isset( $term->id ) ) {
-				continue;
-			}
-
-			foreach ( array( 'commission', 'revenue_share', 'commission_percentage' ) as $field ) {
-				if ( isset( $term->$field ) && '' !== $term->$field ) {
-					$map[ (int) $term->id ] = (float) $term->$field;
-					break;
-				}
+		foreach ( array( 'commission', 'revenue_share', 'commission_percentage' ) as $field ) {
+			if ( isset( $term->$field ) && '' !== $term->$field ) {
+				return (float) $term->$field;
 			}
 		}
 
-		return $map;
+		return null;
 	}
 
-	private static function commission_rate( $affiliate, $terms_map ) {
+	private static function commission_rate( $affiliate, $default_rate ) {
 		if ( isset( $affiliate->custom_commission ) && '' !== $affiliate->custom_commission && null !== $affiliate->custom_commission ) {
 			return (float) $affiliate->custom_commission;
 		}
 
-		$terms_id = isset( $affiliate->affiliate_terms_id ) ? (int) $affiliate->affiliate_terms_id : null;
-
-		return ( null !== $terms_id && isset( $terms_map[ $terms_id ] ) ) ? $terms_map[ $terms_id ] : null;
+		return $default_rate;
 	}
 
 	private static function affiliate_label( $affiliate ) {
@@ -215,20 +211,24 @@ class FSD_Affiliates {
 			return;
 		}
 
-		list( $from, $to, $ym ) = FSD_Month_Filter::get_selected_range();
-
-		$terms = $this->get_cached_terms();
-
 		echo '<div class="wrap fsd-wrap">';
 		echo '<h1 class="fsd-title">' . esc_html__( 'Freemius – Affiliates', 'freemius-dashboard' ) . '</h1>';
 
-		if ( is_wp_error( $terms ) ) {
-			printf( '<div class="fsd-card fsd-notice fsd-notice--error">%s</div>', esc_html( $terms->get_error_message() ) );
+		if ( '' === $this->terms_id ) {
+			printf(
+				'<div class="fsd-card fsd-notice">%s <a href="%s">%s</a></div>',
+				esc_html__( 'Bitte hinterlege zunächst die Affiliate-Programm-ID (aus dem Freemius Developer-Dashboard → Produkt-Einstellungen → „AFFILIATION").', 'freemius-dashboard' ),
+				esc_url( $settings_url ),
+				esc_html__( 'Zu den Einstellungen', 'freemius-dashboard' )
+			);
 			echo '</div>';
 			return;
 		}
 
-		$affiliates = $this->get_cached_affiliates( $terms );
+		list( $from, $to, $ym ) = FSD_Month_Filter::get_selected_range();
+
+		$affiliates = $this->get_cached_affiliates();
+		$term       = $this->get_cached_term();
 		$payments   = $this->get_cached_payments( $from, $to );
 
 		if ( is_wp_error( $affiliates ) ) {
@@ -248,16 +248,16 @@ class FSD_Affiliates {
 			$payments = array();
 		}
 
-		$terms_map = self::terms_commission_map( $terms );
-		$stats     = self::aggregate_payments_by_affiliate( $payments );
+		$default_rate = self::default_commission_rate( $term );
+		$stats        = self::aggregate_payments_by_affiliate( $payments );
 
-		$this->render_table( $affiliates, $stats, $terms_map );
+		$this->render_table( $affiliates, $stats, $default_rate );
 
 		echo '</div>';
 		echo '</div>';
 	}
 
-	private function render_table( $affiliates, $stats, $terms_map ) {
+	private function render_table( $affiliates, $stats, $default_rate ) {
 		$affiliates = is_array( $affiliates ) ? $affiliates : array();
 
 		usort(
@@ -290,7 +290,7 @@ class FSD_Affiliates {
 							<?php
 							list( $name, $email )               = self::affiliate_label( $affiliate );
 							list( $status_text, $status_class ) = self::status_label( isset( $affiliate->status ) ? $affiliate->status : '' );
-							$rate                                = self::commission_rate( $affiliate, $terms_map );
+							$rate                                = self::commission_rate( $affiliate, $default_rate );
 							$affiliate_id                        = isset( $affiliate->id ) ? (int) $affiliate->id : 0;
 							$row_stats                            = isset( $stats[ $affiliate_id ] ) ? $stats[ $affiliate_id ] : null;
 							$earned                                = $row_stats ? $row_stats['net'] * ( ( null !== $rate ? $rate : 0 ) / 100 ) : 0.0;

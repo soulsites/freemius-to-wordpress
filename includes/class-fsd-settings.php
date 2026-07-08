@@ -87,15 +87,29 @@ class FSD_Settings {
 				'description' => __( 'Das Produkt, dessen Käufe angezeigt werden sollen. Bei Produkt-Keys identisch mit der Scope-ID oben.', 'freemius-dashboard' ),
 			)
 		);
+
+		add_settings_field(
+			'affiliate_terms_id',
+			__( 'Affiliate-Programm-ID (für die Affiliates-Seite)', 'freemius-dashboard' ),
+			array( $this, 'render_text_field' ),
+			self::PAGE_SLUG,
+			'fsd_api_section',
+			array(
+				'key'         => 'affiliate_terms_id',
+				'placeholder' => 'z. B. 42',
+				'description' => __( 'Zu finden im Freemius Developer-Dashboard unter Produkt-Einstellungen → „AFFILIATION" (im ersten Tab). Nur nötig, wenn du die Affiliates-Seite nutzen willst.', 'freemius-dashboard' ),
+			)
+		);
 	}
 
 	public static function defaults() {
 		return array(
-			'api_scope'  => 'developer',
-			'scope_id'   => '',
-			'public_key' => '',
-			'secret_key' => '',
-			'product_id' => '',
+			'api_scope'          => 'developer',
+			'scope_id'           => '',
+			'public_key'         => '',
+			'secret_key'         => '',
+			'product_id'         => '',
+			'affiliate_terms_id' => '',
 		);
 	}
 
@@ -121,6 +135,7 @@ class FSD_Settings {
 		$output['scope_id']  = isset( $input['scope_id'] ) ? sanitize_text_field( $input['scope_id'] ) : '';
 		$output['public_key'] = isset( $input['public_key'] ) ? sanitize_text_field( $input['public_key'] ) : '';
 		$output['product_id'] = isset( $input['product_id'] ) ? sanitize_text_field( $input['product_id'] ) : '';
+		$output['affiliate_terms_id'] = isset( $input['affiliate_terms_id'] ) ? sanitize_text_field( $input['affiliate_terms_id'] ) : '';
 
 		// Bei Produkt-Keys ist die Scope-ID zwingend identisch mit der Produkt-ID –
 		// eine Abweichung hier ist genau das, was Freemius mit
