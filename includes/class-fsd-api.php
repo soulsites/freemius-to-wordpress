@@ -1,8 +1,11 @@
 <?php
 /**
- * Schlanker Freemius-API-Client (Developer-Scope) auf Basis der WordPress HTTP API.
+ * Schlanker Freemius-API-Client auf Basis der WordPress HTTP API.
  * Implementiert die Freemius Request-Signatur (HMAC-SHA256) gemäß der offiziellen
- * Freemius WordPress-SDK Referenzimplementierung.
+ * Freemius SDK-Referenzimplementierung.
+ *
+ * Die "Scope-ID" ist je nach Art der Keys entweder die Developer-ID
+ * (Developer-Keys) oder die Produkt-ID (Produkt-Keys) – siehe FSD_Settings.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -16,7 +19,7 @@ class FSD_Api {
 	const MAX_PAGES = 20;
 
 	/** @var string */
-	private $developer_id;
+	private $scope_id;
 
 	/** @var string */
 	private $public_key;
@@ -27,15 +30,15 @@ class FSD_Api {
 	/** @var string */
 	private $product_id;
 
-	public function __construct( $developer_id, $public_key, $secret_key, $product_id ) {
-		$this->developer_id = trim( (string) $developer_id );
-		$this->public_key   = trim( (string) $public_key );
-		$this->secret_key   = trim( (string) $secret_key );
-		$this->product_id   = trim( (string) $product_id );
+	public function __construct( $scope_id, $public_key, $secret_key, $product_id ) {
+		$this->scope_id    = trim( (string) $scope_id );
+		$this->public_key  = trim( (string) $public_key );
+		$this->secret_key  = trim( (string) $secret_key );
+		$this->product_id  = trim( (string) $product_id );
 	}
 
 	public function is_configured() {
-		return '' !== $this->developer_id
+		return '' !== $this->scope_id
 			&& '' !== $this->public_key
 			&& '' !== $this->secret_key
 			&& '' !== $this->product_id;
@@ -73,7 +76,7 @@ class FSD_Api {
 
 		$headers = array(
 			'Date'          => $date,
-			'Authorization' => 'FS ' . $this->developer_id . ':' . $this->public_key . ':' . $signature,
+			'Authorization' => 'FS ' . $this->scope_id . ':' . $this->public_key . ':' . $signature,
 		);
 
 		if ( '' !== $content_type ) {
