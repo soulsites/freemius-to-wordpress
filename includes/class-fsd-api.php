@@ -194,4 +194,37 @@ class FSD_Api {
 
 		return $all;
 	}
+
+	/**
+	 * Lädt alle Affiliate-Partner des Produkts (inkl. Nutzerdaten und individueller Provision).
+	 *
+	 * @return array|WP_Error Liste von Affiliate-Objekten oder WP_Error.
+	 */
+	public function get_affiliates() {
+		$path = sprintf( '/v1/products/%d/affiliates.json', (int) $this->product_id );
+
+		$result = $this->request( $path, 'GET', array( 'all' => 'true', 'extended' => 'true' ) );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		if ( isset( $result->affiliates ) && is_array( $result->affiliates ) ) {
+			return $result->affiliates;
+		}
+
+		return is_array( $result ) ? $result : array();
+	}
+
+	/**
+	 * Lädt die Standard-Provisionsbedingungen des Produkts (gilt, wenn ein Affiliate
+	 * keine individuelle Provision hat).
+	 *
+	 * @return array|WP_Error
+	 */
+	public function get_affiliate_terms() {
+		$path = sprintf( '/v1/products/%d/aff.json', (int) $this->product_id );
+
+		return $this->request( $path, 'GET' );
+	}
 }

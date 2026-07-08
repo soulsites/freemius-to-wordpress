@@ -27,7 +27,9 @@ require_once FSD_PLUGIN_DIR . 'includes/class-fsd-api.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-settings.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-email-settings.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-webhook.php';
+require_once FSD_PLUGIN_DIR . 'includes/class-fsd-month-filter.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-dashboard.php';
+require_once FSD_PLUGIN_DIR . 'includes/class-fsd-affiliates.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-plugin.php';
 
 FSD_Plugin::instance();
