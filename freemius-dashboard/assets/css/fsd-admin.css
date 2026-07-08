@@ -1,0 +1,258 @@
+/*
+ * Freemius Dashboard – minimalistisches Material M3 inspiriertes Design.
+ * Reduzierter Token-Satz: Primärfarbe, Oberflächen, Outline, Statusfarben.
+ */
+
+.fsd-wrap {
+	--fsd-primary: #37618e;
+	--fsd-on-primary: #ffffff;
+	--fsd-primary-container: #d3e4ff;
+	--fsd-on-primary-container: #001c37;
+	--fsd-surface: #ffffff;
+	--fsd-surface-variant: #f3f4f8;
+	--fsd-on-surface: #1a1c1e;
+	--fsd-on-surface-variant: #43474e;
+	--fsd-outline: #e2e4e9;
+	--fsd-error: #ba1a1a;
+	--fsd-error-container: #ffdad6;
+	--fsd-success-container: #d7f2df;
+	--fsd-on-success-container: #0d3818;
+	--fsd-radius-lg: 20px;
+	--fsd-radius-md: 12px;
+	--fsd-radius-sm: 8px;
+
+	color: var(--fsd-on-surface);
+	max-width: 1040px;
+}
+
+.fsd-title {
+	font-weight: 500;
+	letter-spacing: -0.01em;
+	margin-bottom: 20px;
+}
+
+.fsd-card {
+	background: var(--fsd-surface);
+	border: 1px solid var(--fsd-outline);
+	border-radius: var(--fsd-radius-lg);
+	padding: 24px;
+	margin-bottom: 20px;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.fsd-card__title {
+	font-size: 15px;
+	font-weight: 500;
+	color: var(--fsd-on-surface);
+	margin: 0 0 16px;
+}
+
+.fsd-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.fsd-toolbar .fsd-card__title {
+	margin: 0;
+}
+
+/* Notices */
+.fsd-notice {
+	background: var(--fsd-surface-variant);
+	border-radius: var(--fsd-radius-md);
+	padding: 14px 16px;
+	font-size: 13px;
+}
+
+.fsd-notice--error {
+	background: var(--fsd-error-container);
+	color: #410002;
+}
+
+/* Buttons */
+.fsd-btn {
+	border: none;
+	border-radius: 100px;
+	padding: 8px 20px;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	line-height: 1.4;
+}
+
+.fsd-btn--filled,
+.fsd-wrap .button.fsd-btn--filled {
+	background: var(--fsd-primary) !important;
+	color: var(--fsd-on-primary) !important;
+	border: none !important;
+	box-shadow: none !important;
+	text-shadow: none !important;
+}
+
+.fsd-btn--tonal {
+	background: var(--fsd-primary-container);
+	color: var(--fsd-on-primary-container);
+}
+
+.fsd-btn:hover {
+	filter: brightness(0.97);
+}
+
+.fsd-test-result {
+	margin-left: 8px;
+	font-size: 13px;
+	vertical-align: middle;
+}
+
+.fsd-test-result--ok {
+	color: #0d3818;
+}
+
+.fsd-test-result--error {
+	color: var(--fsd-error);
+}
+
+/* Form fields */
+.fsd-input {
+	border-radius: var(--fsd-radius-sm) !important;
+	border-color: var(--fsd-outline) !important;
+	box-shadow: none !important;
+}
+
+.fsd-input:focus {
+	border-color: var(--fsd-primary) !important;
+	box-shadow: 0 0 0 1px var(--fsd-primary) !important;
+}
+
+.fsd-select {
+	border-radius: 100px;
+	border: 1px solid var(--fsd-outline);
+	padding: 6px 14px;
+	background: var(--fsd-surface-variant);
+	font-size: 13px;
+	color: var(--fsd-on-surface);
+}
+
+/* Chart */
+.fsd-chart {
+	position: relative;
+	width: 100%;
+}
+
+#fsd-chart-canvas {
+	width: 100%;
+	height: 220px;
+	display: block;
+}
+
+/* Table */
+.fsd-table-wrap {
+	overflow-x: auto;
+}
+
+.fsd-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.fsd-table th {
+	text-align: left;
+	font-weight: 500;
+	color: var(--fsd-on-surface-variant);
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--fsd-outline);
+}
+
+.fsd-table td {
+	padding: 12px;
+	border-bottom: 1px solid var(--fsd-outline);
+	vertical-align: middle;
+}
+
+.fsd-table tbody tr:last-child td {
+	border-bottom: none;
+}
+
+.fsd-table__amount {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.fsd-table__empty {
+	text-align: center;
+	color: var(--fsd-on-surface-variant);
+	padding: 32px 12px;
+}
+
+.fsd-amount--negative {
+	color: var(--fsd-error);
+}
+
+.fsd-customer {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.fsd-customer__name {
+	font-weight: 500;
+}
+
+.fsd-customer__email {
+	color: var(--fsd-on-surface-variant);
+	font-size: 12px;
+}
+
+/* Chips */
+.fsd-chip {
+	display: inline-block;
+	border-radius: 100px;
+	padding: 3px 10px;
+	font-size: 11px;
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.fsd-chip--sub {
+	background: var(--fsd-primary-container);
+	color: var(--fsd-on-primary-container);
+}
+
+.fsd-chip--lifetime {
+	background: var(--fsd-surface-variant);
+	color: var(--fsd-on-surface-variant);
+}
+
+.fsd-chip--refund {
+	background: var(--fsd-error-container);
+	color: var(--fsd-error);
+	margin-left: 4px;
+}
+
+/* Totals */
+.fsd-totals {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 16px;
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 1px solid var(--fsd-outline);
+}
+
+.fsd-totals__label {
+	font-size: 13px;
+	color: var(--fsd-on-surface-variant);
+}
+
+.fsd-totals__value {
+	font-size: 20px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
