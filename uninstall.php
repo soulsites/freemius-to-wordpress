@@ -8,3 +8,4 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 delete_option( 'fsd_settings' );
+delete_option( 'fsd_email_settings' );
