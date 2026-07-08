@@ -18,7 +18,7 @@ class FSD_Dashboard {
 	public function __construct() {
 		$settings  = FSD_Settings::get_settings();
 		$this->api = new FSD_Api(
-			$settings['developer_id'],
+			$settings['scope_id'],
 			$settings['public_key'],
 			$settings['secret_key'],
 			$settings['product_id']
