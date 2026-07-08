@@ -14,6 +14,12 @@ class FSD_Plugin {
 	/** @var FSD_Settings */
 	private $settings;
 
+	/** @var FSD_Email_Settings */
+	private $email_settings;
+
+	/** @var FSD_Webhook */
+	private $webhook;
+
 	/** @var FSD_Dashboard */
 	private $dashboard;
 
@@ -26,10 +32,14 @@ class FSD_Plugin {
 	}
 
 	private function __construct() {
-		$this->settings = new FSD_Settings();
+		$this->settings        = new FSD_Settings();
+		$this->email_settings  = new FSD_Email_Settings();
+		$this->webhook         = new FSD_Webhook();
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this->settings, 'register' ) );
+		add_action( 'admin_init', array( $this->email_settings, 'register' ) );
+		add_action( 'rest_api_init', array( $this->webhook, 'register_routes' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_fsd_test_connection', array( $this, 'ajax_test_connection' ) );
 	}
@@ -63,6 +73,15 @@ class FSD_Plugin {
 			$capability,
 			FSD_Settings::PAGE_SLUG,
 			array( $this, 'render_settings' )
+		);
+
+		add_submenu_page(
+			FSD_Dashboard::PAGE_SLUG,
+			__( 'E-Mails', 'freemius-dashboard' ),
+			__( 'E-Mails', 'freemius-dashboard' ),
+			$capability,
+			FSD_Email_Settings::PAGE_SLUG,
+			array( $this, 'render_emails' )
 		);
 	}
 
@@ -99,11 +118,32 @@ class FSD_Plugin {
 		<?php
 	}
 
+	public function render_emails() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		?>
+		<div class="wrap fsd-wrap">
+			<h1 class="fsd-title"><?php esc_html_e( 'Freemius – E-Mails', 'freemius-dashboard' ); ?></h1>
+			<div class="fsd-card">
+				<form method="post" action="options.php">
+					<?php
+					settings_fields( FSD_Email_Settings::GROUP );
+					do_settings_sections( FSD_Email_Settings::PAGE_SLUG );
+					submit_button( __( 'Speichern', 'freemius-dashboard' ), 'fsd-btn fsd-btn--filled' );
+					?>
+				</form>
+			</div>
+		</div>
+		<?php
+	}
+
 	public function enqueue_assets( $hook ) {
 		$dashboard_hook = 'toplevel_page_' . FSD_Dashboard::PAGE_SLUG;
 		$settings_hook  = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Settings::PAGE_SLUG;
+		$emails_hook    = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Email_Settings::PAGE_SLUG;
 
-		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook ), true ) ) {
+		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $emails_hook ), true ) ) {
 			return;
 		}
 
