@@ -196,35 +196,75 @@ class FSD_Api {
 	}
 
 	/**
-	 * Lädt alle Affiliate-Partner des Produkts (inkl. Nutzerdaten und individueller Provision).
+	 * Lädt alle Provisionsbedingungen ("Affiliate-Programme") des Produkts. Jedes Produkt
+	 * kann mehrere solcher Terms haben (z. B. Standard-Programm + individuell erstellte);
+	 * Affiliates hängen jeweils unter einer bestimmten Terms-ID.
 	 *
-	 * @return array|WP_Error Liste von Affiliate-Objekten oder WP_Error.
+	 * @return array|WP_Error Liste von Terms-Objekten (jeweils u. a. 'id', 'commission') oder WP_Error.
 	 */
-	public function get_affiliates() {
-		$path = sprintf( '/v1/products/%d/affiliates.json', (int) $this->product_id );
+	public function get_affiliate_terms() {
+		$path = sprintf( '/v1/products/%d/aff.json', (int) $this->product_id );
 
-		$result = $this->request( $path, 'GET', array( 'all' => 'true', 'extended' => 'true' ) );
+		$result = $this->request( $path, 'GET' );
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 
-		if ( isset( $result->affiliates ) && is_array( $result->affiliates ) ) {
-			return $result->affiliates;
+		if ( is_array( $result ) ) {
+			return $result;
 		}
 
-		return is_array( $result ) ? $result : array();
+		if ( isset( $result->terms ) && is_array( $result->terms ) ) {
+			return $result->terms;
+		}
+
+		// Einzelnes Terms-Objekt statt Liste.
+		return array( $result );
 	}
 
 	/**
-	 * Lädt die Standard-Provisionsbedingungen des Produkts (gilt, wenn ein Affiliate
-	 * keine individuelle Provision hat).
+	 * Lädt alle Affiliate-Partner des Produkts über alle übergebenen Provisionsbedingungen
+	 * hinweg. Affiliates sind bei Freemius unter der jeweiligen Terms-ID verschachtelt
+	 * ("/aff/{terms_id}/affiliates.json"), es gibt keinen produktweiten Sammel-Endpoint.
 	 *
-	 * @return array|WP_Error
+	 * @param array $terms Liste von Terms-Objekten mit jeweils einer 'id' (siehe get_affiliate_terms()).
+	 *
+	 * @return array|WP_Error Liste von Affiliate-Objekten oder WP_Error.
 	 */
-	public function get_affiliate_terms() {
-		$path = sprintf( '/v1/products/%d/aff.json', (int) $this->product_id );
+	public function get_affiliates( array $terms ) {
+		$all  = array();
+		$seen = array();
 
-		return $this->request( $path, 'GET' );
+		foreach ( $terms as $term ) {
+			if ( ! isset( $term->id ) ) {
+				continue;
+			}
+
+			$path = sprintf( '/v1/products/%d/aff/%d/affiliates.json', (int) $this->product_id, (int) $term->id );
+
+			$result = $this->request( $path, 'GET', array( 'all' => 'true', 'extended' => 'true' ) );
+
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+
+			$chunk = isset( $result->affiliates ) && is_array( $result->affiliates ) ? $result->affiliates : ( is_array( $result ) ? $result : array() );
+
+			foreach ( $chunk as $affiliate ) {
+				$affiliate_id = isset( $affiliate->id ) ? (int) $affiliate->id : null;
+
+				if ( null !== $affiliate_id ) {
+					if ( isset( $seen[ $affiliate_id ] ) ) {
+						continue;
+					}
+					$seen[ $affiliate_id ] = true;
+				}
+
+				$all[] = $affiliate;
+			}
+		}
+
+		return $all;
 	}
 }
