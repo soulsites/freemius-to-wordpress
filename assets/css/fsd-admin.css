@@ -235,6 +235,12 @@
 	margin-left: 4px;
 }
 
+.fsd-chip--coupon {
+	background: var(--fsd-surface-variant);
+	color: var(--fsd-on-surface-variant);
+	margin-left: 4px;
+}
+
 .fsd-chip--active {
 	background: var(--fsd-success-container);
 	color: var(--fsd-on-success-container);

@@ -39,7 +39,48 @@ class FSD_Dashboard {
 			return $payments;
 		}
 
+		// Sandbox-/Test-Käufe (Freemius "environment" = 1) sind keine echten Verkäufe
+		// und dürfen weder in der Tabelle noch in den Summen auftauchen.
+		$payments = array_values(
+			array_filter(
+				$payments,
+				static function ( $payment ) {
+					return ! self::is_sandbox( $payment );
+				}
+			)
+		);
+
+		$payments = $this->hydrate_missing_customers( $payments );
+
 		set_transient( $cache_key, $payments, self::CACHE_TTL );
+
+		return $payments;
+	}
+
+	/**
+	 * Ergänzt bei Payments ohne eingebettetes user-Objekt (kommt trotz extended=true
+	 * gelegentlich vor) den Kundennamen über einen einzelnen Users-API-Aufruf.
+	 * Ergebnisse werden 1 Tag lang gecacht, da sich Nutzerdaten selten ändern.
+	 */
+	private function hydrate_missing_customers( $payments ) {
+		foreach ( $payments as $payment ) {
+			if ( ! empty( $payment->user ) || empty( $payment->user_id ) ) {
+				continue;
+			}
+
+			$user_cache_key = 'fsd_user_' . (int) $payment->user_id;
+			$user           = get_transient( $user_cache_key );
+
+			if ( false === $user ) {
+				$fetched = $this->api->get_user( $payment->user_id );
+				$user    = is_wp_error( $fetched ) ? null : $fetched;
+				set_transient( $user_cache_key, $user, DAY_IN_SECONDS );
+			}
+
+			if ( $user ) {
+				$payment->user = $user;
+			}
+		}
 
 		return $payments;
 	}
@@ -50,6 +91,14 @@ class FSD_Dashboard {
 
 	private static function is_refund( $payment ) {
 		return ( isset( $payment->type ) && 'refund' === $payment->type ) || ( isset( $payment->gross ) && (float) $payment->gross < 0 );
+	}
+
+	private static function is_sandbox( $payment ) {
+		return isset( $payment->environment ) && 1 === (int) $payment->environment;
+	}
+
+	private static function has_coupon( $payment ) {
+		return ! empty( $payment->coupon_id );
 	}
 
 	private static function net_amount( $payment ) {
@@ -237,6 +286,7 @@ class FSD_Dashboard {
 							list( $name, $email ) = self::customer_label( $payment );
 							$is_sub               = self::is_subscription_payment( $payment );
 							$is_refund            = self::is_refund( $payment );
+							$has_coupon           = self::has_coupon( $payment );
 							$net                  = self::net_amount( $payment );
 							$currency             = isset( $payment->currency ) ? strtoupper( $payment->currency ) : '';
 							$created              = ! empty( $payment->created ) ? mysql2date( 'd.m.Y H:i', $payment->created ) : '—';
@@ -258,6 +308,9 @@ class FSD_Dashboard {
 									</span>
 									<?php if ( $is_refund ) : ?>
 										<span class="fsd-chip fsd-chip--refund"><?php esc_html_e( 'Erstattung', 'freemius-dashboard' ); ?></span>
+									<?php endif; ?>
+									<?php if ( $has_coupon ) : ?>
+										<span class="fsd-chip fsd-chip--coupon"><?php esc_html_e( 'Gutschein', 'freemius-dashboard' ); ?></span>
 									<?php endif; ?>
 								</td>
 								<td class="fsd-table__amount <?php echo $net < 0 ? 'fsd-amount--negative' : ''; ?>">
