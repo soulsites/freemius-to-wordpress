@@ -51,6 +51,22 @@ class FSD_Email_Settings {
 		);
 
 		add_settings_field(
+			'sender',
+			__( 'Absender', 'freemius-dashboard' ),
+			array( $this, 'render_sender_field' ),
+			self::PAGE_SLUG,
+			'fsd_email_section'
+		);
+
+		add_settings_field(
+			'disable_zero_amount',
+			__( 'Kostenlose Käufe', 'freemius-dashboard' ),
+			array( $this, 'render_disable_zero_amount_field' ),
+			self::PAGE_SLUG,
+			'fsd_email_section'
+		);
+
+		add_settings_field(
 			'webhook_url',
 			__( 'Webhook-URL für Freemius', 'freemius-dashboard' ),
 			array( $this, 'render_webhook_url_field' ),
@@ -61,8 +77,11 @@ class FSD_Email_Settings {
 
 	public static function defaults() {
 		return array(
-			'enabled'    => false,
-			'recipients' => array(),
+			'enabled'             => false,
+			'recipients'          => array(),
+			'sender_name'         => get_bloginfo( 'name' ),
+			'sender_email'        => get_option( 'admin_email' ),
+			'disable_zero_amount' => false,
 		);
 	}
 
@@ -90,6 +109,14 @@ class FSD_Email_Settings {
 		}
 
 		$output['recipients'] = $emails;
+
+		$sender_name = isset( $input['sender_name'] ) ? sanitize_text_field( wp_unslash( $input['sender_name'] ) ) : '';
+		$output['sender_name'] = ( '' !== $sender_name ) ? $sender_name : self::defaults()['sender_name'];
+
+		$sender_email = isset( $input['sender_email'] ) ? sanitize_email( wp_unslash( $input['sender_email'] ) ) : '';
+		$output['sender_email'] = is_email( $sender_email ) ? $sender_email : self::defaults()['sender_email'];
+
+		$output['disable_zero_amount'] = ! empty( $input['disable_zero_amount'] );
 
 		add_settings_error(
 			FSD_EMAIL_OPTION_KEY,
@@ -137,6 +164,43 @@ class FSD_Email_Settings {
 			placeholder="name@example.com"
 		><?php echo esc_textarea( $value ); ?></textarea>
 		<p class="description"><?php esc_html_e( 'Eine E-Mail-Adresse pro Zeile (oder durch Komma getrennt).', 'freemius-dashboard' ); ?></p>
+		<?php
+	}
+
+	public function render_sender_field() {
+		$settings = self::get_settings();
+		?>
+		<p>
+			<label for="fsd-field-sender-name"><?php esc_html_e( 'Name', 'freemius-dashboard' ); ?></label><br />
+			<input
+				type="text"
+				class="regular-text fsd-input"
+				id="fsd-field-sender-name"
+				name="<?php echo esc_attr( FSD_EMAIL_OPTION_KEY . '[sender_name]' ); ?>"
+				value="<?php echo esc_attr( $settings['sender_name'] ); ?>"
+			/>
+		</p>
+		<p>
+			<label for="fsd-field-sender-email"><?php esc_html_e( 'E-Mail-Adresse', 'freemius-dashboard' ); ?></label><br />
+			<input
+				type="email"
+				class="regular-text fsd-input"
+				id="fsd-field-sender-email"
+				name="<?php echo esc_attr( FSD_EMAIL_OPTION_KEY . '[sender_email]' ); ?>"
+				value="<?php echo esc_attr( $settings['sender_email'] ); ?>"
+			/>
+		</p>
+		<p class="description"><?php esc_html_e( 'Name und Adresse, mit denen die Kauf-Benachrichtigungen verschickt werden.', 'freemius-dashboard' ); ?></p>
+		<?php
+	}
+
+	public function render_disable_zero_amount_field() {
+		$settings = self::get_settings();
+		?>
+		<label>
+			<input type="checkbox" name="<?php echo esc_attr( FSD_EMAIL_OPTION_KEY . '[disable_zero_amount]' ); ?>" value="1" <?php checked( $settings['disable_zero_amount'] ); ?> />
+			<?php esc_html_e( 'Keine E-Mail verschicken, wenn der Kaufbetrag 0 EUR beträgt.', 'freemius-dashboard' ); ?>
+		</label>
 		<?php
 	}
 

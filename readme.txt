@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -44,12 +44,17 @@ Der Secret Key wird in der WordPress-Datenbank (Options-Tabelle) gespeichert. Be
 = Wie richte ich E-Mail-Benachrichtigungen bei Käufen ein? =
 
 1. Unter „Freemius → Einstellungen“ muss der Secret Key hinterlegt sein – er wird auch zur Prüfung der Webhook-Signatur verwendet.
-2. Unter „Freemius → E-Mails“ die Benachrichtigungen aktivieren und die gewünschten Empfänger-Adressen eintragen.
+2. Unter „Freemius → E-Mails“ die Benachrichtigungen aktivieren, die gewünschten Empfänger-Adressen eintragen sowie optional Absender-Name/-Adresse anpassen. Über die Checkbox lassen sich Benachrichtigungen für Käufe mit 0 EUR Kaufbetrag deaktivieren.
 3. Die dort angezeigte Webhook-URL im Freemius Developer-Dashboard des Produkts unter „Events & Webhooks“ als Endpoint eintragen und mindestens das Event „payment.created“ aktivieren.
 
 Freemius sendet den Webhook bei jedem neuen Kauf, mit HMAC-SHA256 signiert (Header `X-Signature`) über den Secret Key. Die Website prüft die Signatur, bevor sie E-Mails verschickt.
 
 == Changelog ==
+
+= 1.3.0 =
+* Neu: Kauf-Benachrichtigungen werden jetzt als gestaltete HTML-E-Mail mit motivierender Botschaft verschickt.
+* Neu: Absender-Name und -E-Mail-Adresse der Benachrichtigungen sind unter „Freemius → E-Mails“ editierbar.
+* Neu: Checkbox, um Benachrichtigungen bei einem Kaufbetrag von 0 EUR zu deaktivieren.
 
 = 1.2.0 =
 * Neu: Unterseite „E-Mails“ zur Verwaltung von Benachrichtigungs-Empfängern.
