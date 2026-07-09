@@ -277,3 +277,58 @@
 	font-weight: 500;
 	font-variant-numeric: tabular-nums;
 }
+
+/* Affiliate signup form (frontend) */
+.fsd-affiliate-form {
+	max-width: 480px;
+}
+
+.fsd-affiliate-form__field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0 0 16px;
+}
+
+.fsd-affiliate-form__field label {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--fsd-on-surface-variant);
+}
+
+.fsd-affiliate-form .fsd-input,
+.fsd-affiliate-form textarea.fsd-input {
+	width: 100%;
+	padding: 8px 12px;
+	font-size: 14px;
+	border: 1px solid var(--fsd-outline);
+	border-radius: var(--fsd-radius-sm);
+	box-sizing: border-box;
+}
+
+.fsd-affiliate-form .fsd-input:focus {
+	outline: none;
+	border-color: var(--fsd-primary);
+	box-shadow: 0 0 0 1px var(--fsd-primary);
+}
+
+.fsd-affiliate-form__honeypot {
+	position: absolute !important;
+	left: -9999px !important;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+}
+
+.fsd-affiliate-form__result {
+	margin-top: 12px;
+	font-size: 13px;
+}
+
+.fsd-affiliate-form__result--ok {
+	color: #0d3818;
+}
+
+.fsd-affiliate-form__result--error {
+	color: var(--fsd-error);
+}

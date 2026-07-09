@@ -257,4 +257,46 @@ class FSD_Api {
 
 		return is_array( $result ) ? $result : array();
 	}
+
+	/**
+	 * Reicht eine neue Affiliate-Bewerbung ein (z. B. über das öffentliche
+	 * Anmeldeformular). Der Status wird standardmäßig auf "pending" gesetzt,
+	 * damit die Bewerbung im Freemius-Dashboard manuell geprüft/freigegeben
+	 * werden kann, statt den Partner sofort zu aktivieren.
+	 *
+	 * @param int   $terms_id Affiliate-Programm-ID (siehe get_affiliate_term()).
+	 * @param array $args {
+	 *     @type string $name                        Vollständiger Name.
+	 *     @type string $email                        E-Mail-Adresse.
+	 *     @type string $paypal_email                 PayPal-E-Mail (optional).
+	 *     @type string $domain                        Haupt-Website/Domain (optional).
+	 *     @type string $promotion_method_description Wie das Produkt beworben werden soll (optional).
+	 *     @type string $state                         Freemius-Status (Default: "pending").
+	 * }
+	 *
+	 * @return array|WP_Error Das erstellte Affiliate-Objekt oder WP_Error.
+	 */
+	public function create_affiliate( $terms_id, $args ) {
+		$path = sprintf( '/v1/products/%d/aff/%d/affiliates.json', (int) $this->product_id, (int) $terms_id );
+
+		$body = array(
+			'name'  => $args['name'],
+			'email' => $args['email'],
+			'state' => ! empty( $args['state'] ) ? $args['state'] : 'pending',
+		);
+
+		if ( ! empty( $args['paypal_email'] ) ) {
+			$body['paypal_email'] = $args['paypal_email'];
+		}
+
+		if ( ! empty( $args['domain'] ) ) {
+			$body['additional_domains'] = array( $args['domain'] );
+		}
+
+		if ( ! empty( $args['promotion_method_description'] ) ) {
+			$body['promotion_method_description'] = $args['promotion_method_description'];
+		}
+
+		return $this->request( $path, 'POST', array(), $body );
+	}
 }

@@ -26,6 +26,9 @@ class FSD_Plugin {
 	/** @var FSD_Affiliates */
 	private $affiliates;
 
+	/** @var FSD_Affiliate_Signup */
+	private $affiliate_signup;
+
 	public static function instance() {
 		if ( null === self::$instance ) {
 			self::$instance = new self();
@@ -35,13 +38,15 @@ class FSD_Plugin {
 	}
 
 	private function __construct() {
-		$this->settings        = new FSD_Settings();
-		$this->email_settings  = new FSD_Email_Settings();
-		$this->webhook         = new FSD_Webhook();
+		$this->settings         = new FSD_Settings();
+		$this->email_settings   = new FSD_Email_Settings();
+		$this->webhook          = new FSD_Webhook();
+		$this->affiliate_signup = new FSD_Affiliate_Signup();
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this->settings, 'register' ) );
 		add_action( 'admin_init', array( $this->email_settings, 'register' ) );
+		add_action( 'init', array( $this->affiliate_signup, 'register' ) );
 		add_action( 'rest_api_init', array( $this->webhook, 'register_routes' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_fsd_test_connection', array( $this, 'ajax_test_connection' ) );

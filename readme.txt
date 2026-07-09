@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -18,6 +18,8 @@ Dieses Plugin verbindet deine WordPress-Website mit deinem Freemius-Verkäuferko
 * Die Summe der Netto-Einnahmen des ausgewählten Monats (je Währung).
 * Ein Diagramm der Käufe der letzten 30 Tage.
 * Automatische E-Mail-Benachrichtigungen bei jedem neuen Kauf über einen Freemius-Webhook.
+* Eine Affiliate-Partner-Übersicht mit Provisionssätzen und im Monat verdienter Provision.
+* Shortcode `[fsd_affiliate_signup]` für ein öffentliches Anmeldeformular für neue Affiliate-Partner.
 
 Design: minimalistisch, angelehnt an Material Design 3 (M3).
 
@@ -49,7 +51,17 @@ Der Secret Key wird in der WordPress-Datenbank (Options-Tabelle) gespeichert. Be
 
 Freemius sendet den Webhook bei jedem neuen Kauf, mit HMAC-SHA256 signiert (Header `X-Signature`) über den Secret Key. Die Website prüft die Signatur, bevor sie E-Mails verschickt.
 
+= Wie richte ich das Affiliate-Anmeldeformular ein? =
+
+1. Unter „Freemius → Einstellungen“ müssen die API-Zugangsdaten sowie die Affiliate-Programm-ID hinterlegt sein.
+2. Den Shortcode `[fsd_affiliate_signup]` in eine beliebige Seite oder einen Beitrag einfügen.
+3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
+
 == Changelog ==
+
+= 1.4.0 =
+* Neu: Shortcode `[fsd_affiliate_signup]` für ein öffentliches Anmeldeformular, über das sich Besucher als Affiliate-Partner bewerben können. Bewerbungen werden per API mit Status „pending“ bei Freemius angelegt und müssen im Freemius-Dashboard freigegeben werden.
+* Fix: Assets (CSS/Cache-Busting) auf 1.4.0 gehoben, damit gestylte Admin-Seiten nach dem Update nicht durch gecachte Alt-Versionen unstyled erscheinen.
 
 = 1.3.0 =
 * Neu: Kauf-Benachrichtigungen werden jetzt als gestaltete HTML-E-Mail mit motivierender Botschaft verschickt.
