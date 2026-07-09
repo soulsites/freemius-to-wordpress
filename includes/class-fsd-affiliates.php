@@ -116,20 +116,32 @@ class FSD_Affiliates {
 	}
 
 	private static function affiliate_label( $affiliate ) {
-		$user = isset( $affiliate->user ) ? $affiliate->user : null;
+		// Freemius liefert Name/E-Mail direkt auf dem Affiliate-Objekt
+		// (`name`, `email`); ältere/erweiterte Antworten verschachteln sie
+		// stattdessen unter `user`. Wir prüfen beide Varianten.
+		$name  = isset( $affiliate->name ) ? trim( (string) $affiliate->name ) : '';
+		$email = isset( $affiliate->email ) ? (string) $affiliate->email : '';
 
-		if ( $user ) {
-			$first = isset( $user->first ) ? trim( (string) $user->first ) : '';
-			$last  = isset( $user->last ) ? trim( (string) $user->last ) : '';
-			$name  = trim( $first . ' ' . $last );
-			$email = isset( $user->email ) ? (string) $user->email : '';
+		if ( '' === $name || '' === $email ) {
+			$user = isset( $affiliate->user ) ? $affiliate->user : null;
 
-			if ( '' !== $name ) {
-				return array( $name, $email );
+			if ( $user ) {
+				if ( '' === $name ) {
+					$first = isset( $user->first ) ? trim( (string) $user->first ) : '';
+					$last  = isset( $user->last ) ? trim( (string) $user->last ) : '';
+					$name  = trim( $first . ' ' . $last );
+				}
+				if ( '' === $email ) {
+					$email = isset( $user->email ) ? (string) $user->email : '';
+				}
 			}
-			if ( '' !== $email ) {
-				return array( $email, '' );
-			}
+		}
+
+		if ( '' !== $name ) {
+			return array( $name, $email );
+		}
+		if ( '' !== $email ) {
+			return array( $email, '' );
 		}
 
 		return array(
@@ -289,7 +301,7 @@ class FSD_Affiliates {
 						<?php foreach ( $affiliates as $affiliate ) : ?>
 							<?php
 							list( $name, $email )               = self::affiliate_label( $affiliate );
-							list( $status_text, $status_class ) = self::status_label( isset( $affiliate->status ) ? $affiliate->status : '' );
+							list( $status_text, $status_class ) = self::status_label( isset( $affiliate->state ) ? $affiliate->state : ( isset( $affiliate->status ) ? $affiliate->status : '' ) );
 							$rate                                = self::commission_rate( $affiliate, $default_rate );
 							$affiliate_id                        = isset( $affiliate->id ) ? (int) $affiliate->id : 0;
 							$row_stats                            = isset( $stats[ $affiliate_id ] ) ? $stats[ $affiliate_id ] : null;
