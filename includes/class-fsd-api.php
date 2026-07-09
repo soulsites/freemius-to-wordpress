@@ -205,6 +205,20 @@ class FSD_Api {
 	}
 
 	/**
+	 * Lädt einen einzelnen Nutzer (für Käufe, bei denen die Payments-Antwort trotz
+	 * extended=true kein eingebettetes user-Objekt enthält).
+	 *
+	 * @param int $user_id Freemius-Nutzer-ID.
+	 *
+	 * @return array|WP_Error
+	 */
+	public function get_user( $user_id ) {
+		$path = sprintf( '/v1/products/%d/users/%d.json', (int) $this->product_id, (int) $user_id );
+
+		return $this->request( $path, 'GET' );
+	}
+
+	/**
 	 * Lädt die Provisionsbedingungen ("Affiliate-Programm") des Produkts – u. a. den
 	 * Standard-Provisionssatz, der gilt, wenn ein Affiliate keine individuelle
 	 * Provision (custom_commission) hat.
