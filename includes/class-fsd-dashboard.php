@@ -58,13 +58,15 @@ class FSD_Dashboard {
 	}
 
 	/**
-	 * Ergänzt bei Payments ohne eingebettetes user-Objekt (kommt trotz extended=true
-	 * gelegentlich vor) den Kundennamen über einen einzelnen Users-API-Aufruf.
+	 * Ergänzt bei Payments ohne verwertbaren Vor-/Nachnamen (das eingebettete
+	 * user-Objekt fehlt trotz extended=true gelegentlich komplett oder enthält
+	 * nur die E-Mail-Adresse) den Kundennamen über einen einzelnen Users-API-Aufruf,
+	 * damit statt der User-ID immer Vor- und Nachname angezeigt werden können.
 	 * Ergebnisse werden 1 Tag lang gecacht, da sich Nutzerdaten selten ändern.
 	 */
 	private function hydrate_missing_customers( $payments ) {
 		foreach ( $payments as $payment ) {
-			if ( ! empty( $payment->user ) || empty( $payment->user_id ) ) {
+			if ( self::has_customer_name( $payment ) || empty( $payment->user_id ) ) {
 				continue;
 			}
 
@@ -83,6 +85,17 @@ class FSD_Dashboard {
 		}
 
 		return $payments;
+	}
+
+	private static function has_customer_name( $payment ) {
+		if ( empty( $payment->user ) ) {
+			return false;
+		}
+
+		$first = isset( $payment->user->first ) ? trim( (string) $payment->user->first ) : '';
+		$last  = isset( $payment->user->last ) ? trim( (string) $payment->user->last ) : '';
+
+		return '' !== $first || '' !== $last;
 	}
 
 	private static function is_subscription_payment( $payment ) {
@@ -106,6 +119,18 @@ class FSD_Dashboard {
 		$vat   = isset( $payment->vat ) ? (float) $payment->vat : 0.0;
 
 		return $gross - $vat;
+	}
+
+	private static function gross_amount( $payment ) {
+		return isset( $payment->gross ) ? (float) $payment->gross : 0.0;
+	}
+
+	private static function vat_amount( $payment ) {
+		return isset( $payment->vat ) ? (float) $payment->vat : 0.0;
+	}
+
+	private static function field( $payment, $name ) {
+		return ( isset( $payment->$name ) && '' !== $payment->$name ) ? (string) $payment->$name : '—';
 	}
 
 	private static function customer_label( $payment ) {
@@ -263,22 +288,36 @@ class FSD_Dashboard {
 				return strcmp( (string) ( $b->created ?? '' ), (string) ( $a->created ?? '' ) );
 			}
 		);
+
+		$columns = 17;
 		?>
 		<div class="fsd-table-wrap">
 			<table class="fsd-table">
 				<thead>
 					<tr>
+						<th><?php esc_html_e( 'Zahlungs-ID', 'freemius-dashboard' ); ?></th>
 						<th><?php esc_html_e( 'Datum', 'freemius-dashboard' ); ?></th>
 						<th><?php esc_html_e( 'Kunde', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'Land', 'freemius-dashboard' ); ?></th>
 						<th><?php esc_html_e( 'Plan', 'freemius-dashboard' ); ?></th>
 						<th><?php esc_html_e( 'Typ', 'freemius-dashboard' ); ?></th>
-						<th class="fsd-table__amount"><?php esc_html_e( 'Betrag netto', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'Zahlungsart', 'freemius-dashboard' ); ?></th>
+						<th class="fsd-table__amount"><?php esc_html_e( 'Brutto', 'freemius-dashboard' ); ?></th>
+						<th class="fsd-table__amount"><?php esc_html_e( 'USt.', 'freemius-dashboard' ); ?></th>
+						<th class="fsd-table__amount"><?php esc_html_e( 'Netto', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'USt-ID', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'Gutschein-ID', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'Externe ID', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'Lizenz-ID', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'Abo-ID', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'Quelle', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'Aktualisiert', 'freemius-dashboard' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php if ( empty( $payments ) ) : ?>
 						<tr>
-							<td colspan="5" class="fsd-table__empty"><?php esc_html_e( 'Keine Käufe in diesem Monat.', 'freemius-dashboard' ); ?></td>
+							<td colspan="<?php echo (int) $columns; ?>" class="fsd-table__empty"><?php esc_html_e( 'Keine Käufe in diesem Monat.', 'freemius-dashboard' ); ?></td>
 						</tr>
 					<?php else : ?>
 						<?php foreach ( $payments as $payment ) : ?>
@@ -287,11 +326,15 @@ class FSD_Dashboard {
 							$is_sub               = self::is_subscription_payment( $payment );
 							$is_refund            = self::is_refund( $payment );
 							$has_coupon           = self::has_coupon( $payment );
+							$gross                = self::gross_amount( $payment );
+							$vat                  = self::vat_amount( $payment );
 							$net                  = self::net_amount( $payment );
 							$currency             = isset( $payment->currency ) ? strtoupper( $payment->currency ) : '';
 							$created              = ! empty( $payment->created ) ? mysql2date( 'd.m.Y H:i', $payment->created ) : '—';
+							$updated              = ! empty( $payment->updated ) ? mysql2date( 'd.m.Y H:i', $payment->updated ) : '—';
 							?>
 							<tr>
+								<td><?php echo esc_html( self::field( $payment, 'id' ) ); ?></td>
 								<td><?php echo esc_html( $created ); ?></td>
 								<td>
 									<div class="fsd-customer">
@@ -301,6 +344,7 @@ class FSD_Dashboard {
 										<?php endif; ?>
 									</div>
 								</td>
+								<td><?php echo esc_html( strtoupper( self::field( $payment, 'country_code' ) ) ); ?></td>
 								<td><?php echo esc_html( self::plan_label( $payment ) ); ?></td>
 								<td>
 									<span class="fsd-chip <?php echo $is_sub ? 'fsd-chip--sub' : 'fsd-chip--lifetime'; ?>">
@@ -313,9 +357,23 @@ class FSD_Dashboard {
 										<span class="fsd-chip fsd-chip--coupon"><?php esc_html_e( 'Gutschein', 'freemius-dashboard' ); ?></span>
 									<?php endif; ?>
 								</td>
+								<td><?php echo esc_html( self::field( $payment, 'gateway' ) ); ?></td>
+								<td class="fsd-table__amount">
+									<?php echo esc_html( number_format_i18n( $gross, 2 ) . ' ' . $currency ); ?>
+								</td>
+								<td class="fsd-table__amount">
+									<?php echo esc_html( number_format_i18n( $vat, 2 ) . ' ' . $currency ); ?>
+								</td>
 								<td class="fsd-table__amount <?php echo $net < 0 ? 'fsd-amount--negative' : ''; ?>">
 									<?php echo esc_html( number_format_i18n( $net, 2 ) . ' ' . $currency ); ?>
 								</td>
+								<td><?php echo esc_html( self::field( $payment, 'vat_id' ) ); ?></td>
+								<td><?php echo esc_html( self::field( $payment, 'coupon_id' ) ); ?></td>
+								<td><?php echo esc_html( self::field( $payment, 'external_id' ) ); ?></td>
+								<td><?php echo esc_html( self::field( $payment, 'license_id' ) ); ?></td>
+								<td><?php echo esc_html( self::field( $payment, 'subscription_id' ) ); ?></td>
+								<td><?php echo esc_html( self::field( $payment, 'source' ) ); ?></td>
+								<td><?php echo esc_html( $updated ); ?></td>
 							</tr>
 						<?php endforeach; ?>
 					<?php endif; ?>
