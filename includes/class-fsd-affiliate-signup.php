@@ -37,7 +37,7 @@ class FSD_Affiliate_Signup {
 	 * mit den separat hinterlegten Developer-Keys authentifiziert.
 	 */
 	private function get_dev_api( $settings ) {
-		return new FSD_Api( $settings['dev_scope_id'], $settings['dev_public_key'], $settings['dev_secret_key'], $settings['product_id'] );
+		return new FSD_Api( $settings['dev_scope_id'], $settings['dev_public_key'], $settings['dev_secret_key'], $settings['product_id'], 'developer' );
 	}
 
 	public function render_shortcode() {

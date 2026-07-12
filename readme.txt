@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.6.0
+Stable tag: 1.6.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -27,17 +27,19 @@ Design: minimalistisch, angelehnt an Material Design 3 (M3).
 
 1. Plugin-Ordner nach `wp-content/plugins/` hochladen.
 2. Plugin im WordPress-Adminbereich aktivieren.
-3. Unter „Freemius → Einstellungen“ die Art der API-Keys wählen und die zugehörigen Zugangsdaten eintragen (siehe FAQ).
+3. Unter „Freemius → Einstellungen“ die Developer-Keys, die Produkt-Keys und die Affiliate-Programm-ID eintragen (siehe FAQ).
 4. Unter „Freemius → Dashboard“ die Käufe einsehen.
 
 == Frequently Asked Questions ==
 
 = Wo finde ich meine API-Zugangsdaten? =
 
-Freemius unterscheidet zwei Arten von Keys – wichtig ist, die passende Scope-ID zum jeweiligen Schlüsselpaar zu verwenden, sonst meldet Freemius „Invalid Authorization header“:
+Die Einstellungsseite fragt beide Arten von Keys in getrennten Abschnitten ab – jeweils mit ihrer eigenen ID:
 
-* **Developer-Keys**: oben rechts unter „Mein Profil → Keys“. Scope-ID = deine Developer-ID. Zugriff auf alle deine Produkte, daher zusätzlich die Produkt-ID des gewünschten Produkts eintragen.
-* **Produkt-Keys**: in den Einstellungen des jeweiligen Produkts unter „Keys“. Scope-ID = die Produkt-ID selbst (wird automatisch auch als Produkt-ID übernommen).
+* **Developer-Keys** (Abschnitt 1, für das Affiliate-Anmeldeformular): oben rechts unter „Mein Profil → Keys“. Als ID wird die Developer-ID eingetragen. Nur mit Developer-Keys lassen sich neue Affiliates über die API anlegen.
+* **Produkt-Keys** (Abschnitt 2, für Dashboard, Käufe und Affiliates-Liste): in den Einstellungen des jeweiligen Produkts unter „Keys“. Als ID genügt die Produkt-ID; sie dient zugleich als Scope-ID.
+
+Werden ID und Schlüsselpaar vertauscht, meldet Freemius „Invalid Authorization header“.
 
 = Wird der Secret Key sicher gespeichert? =
 
@@ -58,6 +60,9 @@ Freemius sendet den Webhook bei jedem neuen Kauf, mit HMAC-SHA256 signiert (Head
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.6.1 =
+* Fix: Das Anlegen von Affiliates über das Anmeldeformular schlug mit „Invalid Authorization header“ (UnauthorizedAccess) fehl. Developer-Keys erfordern den Developer-Scope im Ressourcen-Pfad (`/v1/developers/{id}/products/{id}/…`); dieser wird jetzt korrekt aufgebaut.
 
 = 1.6.0 =
 * Änderung: Die E-Mail-Bestätigung im Affiliate-Anmeldeformular läuft jetzt über einen sechsstelligen Code (reiner Text, kein Link). Der Code wird per E-Mail verschickt und im Formular eingegeben; danach wird die Bewerbung angelegt.

@@ -30,11 +30,43 @@ class FSD_Api {
 	/** @var string */
 	private $product_id;
 
-	public function __construct( $scope_id, $public_key, $secret_key, $product_id ) {
+	/** @var string 'product' (Produkt-Keys) oder 'developer' (Developer-Keys). */
+	private $scope;
+
+	/**
+	 * @param string $scope 'product' für Produkt-Keys (Scope-ID = Produkt-ID) oder
+	 *                       'developer' für Developer-Keys (Scope-ID = Developer-ID).
+	 *                       Bestimmt, wie Freemius den Ressourcen-Pfad erwartet.
+	 */
+	public function __construct( $scope_id, $public_key, $secret_key, $product_id, $scope = 'product' ) {
 		$this->scope_id    = trim( (string) $scope_id );
 		$this->public_key  = trim( (string) $public_key );
 		$this->secret_key  = trim( (string) $secret_key );
 		$this->product_id  = trim( (string) $product_id );
+		$this->scope       = ( 'developer' === $scope ) ? 'developer' : 'product';
+	}
+
+	/**
+	 * Baut einen Ressourcen-Pfad unterhalb des aktiven Scopes. Freemius verlangt
+	 * bei Developer-Keys den Developer-Scope als Präfix:
+	 *   Produkt-Keys:   /v1/products/{product_id}/{suffix}
+	 *   Developer-Keys: /v1/developers/{dev_id}/products/{product_id}/{suffix}
+	 * Wird die Produkt-Variante mit Developer-Keys signiert, antwortet Freemius
+	 * mit "Invalid Authorization header" (UnauthorizedAccess).
+	 *
+	 * @param string $suffix Pfad unterhalb von .../products/{product_id}/, z. B.
+	 *                        "aff/42/affiliates.json". Leer für das Produkt selbst.
+	 */
+	private function product_path( $suffix = '' ) {
+		$suffix = ltrim( (string) $suffix, '/' );
+
+		if ( 'developer' === $this->scope ) {
+			$base = sprintf( '/v1/developers/%d/products/%d', (int) $this->scope_id, (int) $this->product_id );
+		} else {
+			$base = sprintf( '/v1/products/%d', (int) $this->product_id );
+		}
+
+		return '' === $suffix ? $base . '.json' : $base . '/' . $suffix;
 	}
 
 	public function is_configured() {
@@ -152,7 +184,7 @@ class FSD_Api {
 	 * @return array|WP_Error
 	 */
 	public function get_product() {
-		$path = sprintf( '/v1/products/%d.json', (int) $this->product_id );
+		$path = $this->product_path();
 
 		return $this->request( $path, 'GET' );
 	}
@@ -166,7 +198,7 @@ class FSD_Api {
 	 * @return array|WP_Error Liste von Payment-Objekten oder WP_Error.
 	 */
 	public function get_payments( DateTimeInterface $from, DateTimeInterface $to ) {
-		$path = sprintf( '/v1/products/%d/payments.json', (int) $this->product_id );
+		$path = $this->product_path( 'payments.json' );
 
 		$all    = array();
 		$offset = 0;
@@ -213,7 +245,7 @@ class FSD_Api {
 	 * @return array|WP_Error
 	 */
 	public function get_user( $user_id ) {
-		$path = sprintf( '/v1/products/%d/users/%d.json', (int) $this->product_id, (int) $user_id );
+		$path = $this->product_path( sprintf( 'users/%d.json', (int) $user_id ) );
 
 		return $this->request( $path, 'GET' );
 	}
@@ -229,7 +261,7 @@ class FSD_Api {
 	 * @return array|WP_Error
 	 */
 	public function get_affiliate_term( $terms_id ) {
-		$path = sprintf( '/v1/products/%d/aff/%d.json', (int) $this->product_id, (int) $terms_id );
+		$path = $this->product_path( sprintf( 'aff/%d.json', (int) $terms_id ) );
 
 		return $this->request( $path, 'GET' );
 	}
@@ -243,7 +275,7 @@ class FSD_Api {
 	 * @return array|WP_Error Liste von Affiliate-Objekten oder WP_Error.
 	 */
 	public function get_affiliates( $terms_id ) {
-		$path = sprintf( '/v1/products/%d/aff/%d/affiliates.json', (int) $this->product_id, (int) $terms_id );
+		$path = $this->product_path( sprintf( 'aff/%d/affiliates.json', (int) $terms_id ) );
 
 		$result = $this->request( $path, 'GET', array( 'all' => 'true', 'extended' => 'true' ) );
 
@@ -277,7 +309,7 @@ class FSD_Api {
 	 * @return array|WP_Error Das erstellte Affiliate-Objekt oder WP_Error.
 	 */
 	public function create_affiliate( $terms_id, $args ) {
-		$path = sprintf( '/v1/products/%d/aff/%d/affiliates.json', (int) $this->product_id, (int) $terms_id );
+		$path = $this->product_path( sprintf( 'aff/%d/affiliates.json', (int) $terms_id ) );
 
 		$body = array(
 			'name'  => $args['name'],
