@@ -23,7 +23,7 @@ class FSD_Affiliates {
 		$settings       = FSD_Settings::get_settings();
 		$this->terms_id = $settings['affiliate_terms_id'];
 		$this->api      = new FSD_Api(
-			$settings['scope_id'],
+			$settings['product_id'],
 			$settings['public_key'],
 			$settings['secret_key'],
 			$settings['product_id']

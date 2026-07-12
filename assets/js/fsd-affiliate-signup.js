@@ -1,10 +1,8 @@
 /**
- * Zweistufiges Affiliate-Anmeldeformular, rein linkbasiert bestätigt:
- * 1) Daten eingeben -> Bestätigungslink per E-Mail anfordern (requestAction).
- * 2) Link in der E-Mail anklicken (bestätigt automatisch im Hintergrund,
- *    confirmAction) -> im Formular auf "Ich habe den Link bestätigt"
- *    klicken -> finalizeAction prüft die Bestätigung und legt bei Erfolg
- *    direkt die Bewerbung an.
+ * Zweistufiges Affiliate-Anmeldeformular, per Code bestätigt:
+ * 1) Daten eingeben -> Bestätigungscode per E-Mail anfordern (requestAction).
+ * 2) Code aus der E-Mail eingeben -> verifyAction prüft den Code und legt bei
+ *    Erfolg direkt die Bewerbung an.
  */
 ( function () {
 	'use strict';
@@ -16,22 +14,18 @@
 			return;
 		}
 
-		var cfg            = fsdAffiliateSignup;
-		var i18n           = cfg.i18n;
-		var result         = document.getElementById( 'fsd-affiliate-signup-result' );
-		var step1          = document.getElementById( 'fsd-affiliate-step-1' );
-		var step2          = document.getElementById( 'fsd-affiliate-step-2' );
-		var pageUrlEl      = document.getElementById( 'fsd-aff-page-url' );
-		var tokenEl        = document.getElementById( 'fsd-aff-token' );
-		var requestBtn     = document.getElementById( 'fsd-aff-request-code-btn' );
-		var confirmBtn     = document.getElementById( 'fsd-aff-confirm-btn' );
-		var resendBtn      = document.getElementById( 'fsd-aff-resend-btn' );
-		var backBtn        = document.getElementById( 'fsd-aff-back-btn' );
-		var resendTimer    = null;
-
-		if ( pageUrlEl ) {
-			pageUrlEl.value = window.location.origin + window.location.pathname;
-		}
+		var cfg         = fsdAffiliateSignup;
+		var i18n        = cfg.i18n;
+		var result      = document.getElementById( 'fsd-affiliate-signup-result' );
+		var step1       = document.getElementById( 'fsd-affiliate-step-1' );
+		var step2       = document.getElementById( 'fsd-affiliate-step-2' );
+		var tokenEl     = document.getElementById( 'fsd-aff-token' );
+		var codeEl      = document.getElementById( 'fsd-aff-code' );
+		var requestBtn  = document.getElementById( 'fsd-aff-request-code-btn' );
+		var verifyBtn   = document.getElementById( 'fsd-aff-verify-btn' );
+		var resendBtn   = document.getElementById( 'fsd-aff-resend-btn' );
+		var backBtn     = document.getElementById( 'fsd-aff-back-btn' );
+		var resendTimer = null;
 
 		function showResult( message, isError ) {
 			result.textContent = message;
@@ -46,6 +40,9 @@
 		function goToStep2() {
 			step1.style.display = 'none';
 			step2.style.display = '';
+			if ( codeEl ) {
+				codeEl.focus();
+			}
 		}
 
 		function goToStep1() {
@@ -98,7 +95,7 @@
 			resendBtn.textContent = i18n.resend;
 		}
 
-		function requestLink() {
+		function requestCode() {
 			showPending( i18n.sending );
 			requestBtn.disabled = true;
 
@@ -128,22 +125,11 @@
 				} );
 		}
 
-		function confirmLink( token ) {
-			return post( cfg.confirmAction, { token: token } ).then( function ( json ) {
-				if ( json && json.success ) {
-					showResult( json.data.message, false );
-				} else {
-					var message = json && json.data && json.data.message ? json.data.message : 'Unbekannter Fehler';
-					showResult( i18n.error + message, true );
-				}
-			} );
-		}
-
-		function finalize() {
+		function verifyCode() {
 			showPending( i18n.checking );
-			confirmBtn.disabled = true;
+			verifyBtn.disabled = true;
 
-			post( cfg.finalizeAction, { token: tokenEl.value } )
+			post( cfg.verifyAction, { token: tokenEl.value, code: codeEl.value } )
 				.then( function ( json ) {
 					if ( json && json.success ) {
 						showResult( json.data.message, false );
@@ -159,31 +145,27 @@
 					showResult( i18n.error + 'Netzwerkfehler', true );
 				} )
 				.finally( function () {
-					confirmBtn.disabled = false;
+					verifyBtn.disabled = false;
 				} );
 		}
 
-		requestBtn.addEventListener( 'click', requestLink );
-		confirmBtn.addEventListener( 'click', finalize );
-		resendBtn.addEventListener( 'click', requestLink );
+		requestBtn.addEventListener( 'click', requestCode );
+		verifyBtn.addEventListener( 'click', verifyCode );
+		resendBtn.addEventListener( 'click', requestCode );
 		backBtn.addEventListener( 'click', function () {
 			clearResendCooldown();
 			goToStep1();
 			showPending( '' );
 		} );
 
-		// Landung über den Link aus der Bestätigungs-E-Mail: Token übernehmen
-		// und automatisch als bestätigt markieren (legt noch keinen Affiliate an).
-		var params   = new URLSearchParams( window.location.search );
-		var urlToken = params.get( 'fsd_verify_token' );
-
-		if ( urlToken ) {
-			tokenEl.value = urlToken;
-			goToStep2();
-			resendBtn.disabled = false;
-			resendBtn.textContent = i18n.resend;
-			showPending( i18n.checking );
-			confirmLink( urlToken );
+		// Enter-Taste im Code-Feld löst die Bestätigung aus.
+		if ( codeEl ) {
+			codeEl.addEventListener( 'keydown', function ( event ) {
+				if ( 'Enter' === event.key ) {
+					event.preventDefault();
+					verifyCode();
+				}
+			} );
 		}
 	} );
 } )();

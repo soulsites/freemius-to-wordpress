@@ -203,7 +203,7 @@ class FSD_Plugin {
 		}
 
 		$settings = FSD_Settings::get_settings();
-		$api      = new FSD_Api( $settings['scope_id'], $settings['public_key'], $settings['secret_key'], $settings['product_id'] );
+		$api      = new FSD_Api( $settings['product_id'], $settings['public_key'], $settings['secret_key'], $settings['product_id'] );
 
 		if ( ! $api->is_configured() ) {
 			wp_send_json_error( array( 'message' => __( 'Bitte alle Felder ausfüllen und speichern.', 'freemius-dashboard' ) ) );
