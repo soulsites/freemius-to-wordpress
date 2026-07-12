@@ -100,6 +100,44 @@ class FSD_Settings {
 				'description' => __( 'Zu finden im Freemius Developer-Dashboard unter Produkt-Einstellungen → „AFFILIATION" (im ersten Tab). Nur nötig, wenn du die Affiliates-Seite nutzen willst.', 'freemius-dashboard' ),
 			)
 		);
+
+		add_settings_section(
+			'fsd_dev_api_section',
+			__( 'Freemius Developer-Keys (für das Affiliate-Anmeldeformular)', 'freemius-dashboard' ),
+			array( $this, 'render_dev_section_intro' ),
+			self::PAGE_SLUG
+		);
+
+		add_settings_field(
+			'dev_scope_id',
+			__( 'Developer-ID', 'freemius-dashboard' ),
+			array( $this, 'render_text_field' ),
+			self::PAGE_SLUG,
+			'fsd_dev_api_section',
+			array(
+				'key'         => 'dev_scope_id',
+				'placeholder' => 'z. B. 1234',
+				'description' => __( 'Deine Developer-ID (Mein Profil → Keys), nicht die Produkt-ID.', 'freemius-dashboard' ),
+			)
+		);
+
+		add_settings_field(
+			'dev_public_key',
+			__( 'Developer Public Key', 'freemius-dashboard' ),
+			array( $this, 'render_text_field' ),
+			self::PAGE_SLUG,
+			'fsd_dev_api_section',
+			array( 'key' => 'dev_public_key', 'placeholder' => 'pk_...' )
+		);
+
+		add_settings_field(
+			'dev_secret_key',
+			__( 'Developer Secret Key', 'freemius-dashboard' ),
+			array( $this, 'render_secret_field' ),
+			self::PAGE_SLUG,
+			'fsd_dev_api_section',
+			array( 'key' => 'dev_secret_key' )
+		);
 	}
 
 	public static function defaults() {
@@ -110,6 +148,9 @@ class FSD_Settings {
 			'secret_key'         => '',
 			'product_id'         => '',
 			'affiliate_terms_id' => '',
+			'dev_scope_id'       => '',
+			'dev_public_key'     => '',
+			'dev_secret_key'     => '',
 		);
 	}
 
@@ -136,6 +177,8 @@ class FSD_Settings {
 		$output['public_key'] = isset( $input['public_key'] ) ? sanitize_text_field( $input['public_key'] ) : '';
 		$output['product_id'] = isset( $input['product_id'] ) ? sanitize_text_field( $input['product_id'] ) : '';
 		$output['affiliate_terms_id'] = isset( $input['affiliate_terms_id'] ) ? sanitize_text_field( $input['affiliate_terms_id'] ) : '';
+		$output['dev_scope_id']   = isset( $input['dev_scope_id'] ) ? sanitize_text_field( $input['dev_scope_id'] ) : '';
+		$output['dev_public_key'] = isset( $input['dev_public_key'] ) ? sanitize_text_field( $input['dev_public_key'] ) : '';
 
 		// Bei Produkt-Keys ist die Scope-ID zwingend identisch mit der Produkt-ID –
 		// eine Abweichung hier ist genau das, was Freemius mit
@@ -144,12 +187,18 @@ class FSD_Settings {
 			$output['product_id'] = $output['scope_id'];
 		}
 
-		// Secret Key nur überschreiben, wenn ein neuer Wert eingegeben wurde,
-		// damit das maskierte Feld beim Speichern nicht versehentlich geleert wird.
+		// Secret Keys nur überschreiben, wenn ein neuer Wert eingegeben wurde,
+		// damit die maskierten Felder beim Speichern nicht versehentlich geleert werden.
 		if ( isset( $input['secret_key'] ) && '' !== trim( $input['secret_key'] ) ) {
 			$output['secret_key'] = sanitize_text_field( $input['secret_key'] );
 		} else {
 			$output['secret_key'] = $existing['secret_key'];
+		}
+
+		if ( isset( $input['dev_secret_key'] ) && '' !== trim( $input['dev_secret_key'] ) ) {
+			$output['dev_secret_key'] = sanitize_text_field( $input['dev_secret_key'] );
+		} else {
+			$output['dev_secret_key'] = $existing['dev_secret_key'];
 		}
 
 		add_settings_error(
@@ -204,14 +253,15 @@ class FSD_Settings {
 		<?php
 	}
 
-	public function render_secret_field() {
+	public function render_secret_field( $args = array() ) {
 		$settings = self::get_settings();
-		$has_key  = '' !== $settings['secret_key'];
+		$key      = isset( $args['key'] ) ? $args['key'] : 'secret_key';
+		$has_key  = '' !== $settings[ $key ];
 		?>
 		<input
 			type="password"
 			class="regular-text fsd-input"
-			name="<?php echo esc_attr( FSD_OPTION_KEY . '[secret_key]' ); ?>"
+			name="<?php echo esc_attr( FSD_OPTION_KEY . '[' . $key . ']' ); ?>"
 			value=""
 			placeholder="<?php echo $has_key ? esc_attr__( '•••••••••••••••• (unverändert lassen)', 'freemius-dashboard' ) : esc_attr__( 'sk_...', 'freemius-dashboard' ); ?>"
 			autocomplete="new-password"
@@ -220,5 +270,9 @@ class FSD_Settings {
 			<p class="description"><?php esc_html_e( 'Es ist bereits ein Secret Key hinterlegt. Nur ausfüllen, um ihn zu ändern.', 'freemius-dashboard' ); ?></p>
 		<?php endif; ?>
 		<?php
+	}
+
+	public function render_dev_section_intro() {
+		echo '<p>' . esc_html__( 'Das Anlegen von Affiliates über die Freemius-API erfordert zwingend Developer-Keys ("Mein Profil → Keys") – Produkt-Keys werden von Freemius dafür mit "AccessForbidden" abgelehnt, unabhängig von der Auswahl oben. Diese Zugangsdaten werden ausschließlich für das [fsd_affiliate_signup]-Formular verwendet, alle anderen Funktionen nutzen weiterhin die Zugangsdaten oben.', 'freemius-dashboard' ) . '</p>';
 	}
 }
