@@ -22,13 +22,23 @@ class FSD_Affiliate_Signup {
 		add_action( 'wp_ajax_nopriv_' . self::AJAX_ACTION, array( $this, 'ajax_submit' ) );
 	}
 
+	/**
+	 * Freemius lehnt das Anlegen von Affiliates mit Produkt-Keys ab
+	 * ("AccessForbidden – required scope is user"), daher wird hierfür immer
+	 * mit den separat hinterlegten Developer-Keys authentifiziert, unabhängig
+	 * von der auf der Einstellungsseite gewählten "Art der API-Keys".
+	 */
+	private function get_dev_api( $settings ) {
+		return new FSD_Api( $settings['dev_scope_id'], $settings['dev_public_key'], $settings['dev_secret_key'], $settings['product_id'] );
+	}
+
 	public function render_shortcode() {
 		$settings = FSD_Settings::get_settings();
-		$api      = new FSD_Api( $settings['scope_id'], $settings['public_key'], $settings['secret_key'], $settings['product_id'] );
+		$api      = $this->get_dev_api( $settings );
 
 		if ( ! $api->is_configured() || '' === $settings['affiliate_terms_id'] ) {
 			if ( current_user_can( 'manage_options' ) ) {
-				return '<p>' . esc_html__( 'Affiliate-Anmeldeformular: Bitte zuerst die Freemius API-Zugangsdaten und die Affiliate-Programm-ID in den Freemius-Einstellungen hinterlegen.', 'freemius-dashboard' ) . '</p>';
+				return '<p>' . esc_html__( 'Affiliate-Anmeldeformular: Bitte zuerst die Freemius Developer-Keys und die Affiliate-Programm-ID in den Freemius-Einstellungen hinterlegen.', 'freemius-dashboard' ) . '</p>';
 			}
 			return '';
 		}
@@ -112,7 +122,7 @@ class FSD_Affiliate_Signup {
 		$promo        = isset( $_POST['promotion_method_description'] ) ? sanitize_textarea_field( wp_unslash( $_POST['promotion_method_description'] ) ) : '';
 
 		$settings = FSD_Settings::get_settings();
-		$api      = new FSD_Api( $settings['scope_id'], $settings['public_key'], $settings['secret_key'], $settings['product_id'] );
+		$api      = $this->get_dev_api( $settings );
 
 		if ( ! $api->is_configured() || '' === $settings['affiliate_terms_id'] ) {
 			wp_send_json_error( array( 'message' => __( 'Das Affiliate-Programm ist derzeit nicht verfügbar.', 'freemius-dashboard' ) ) );
