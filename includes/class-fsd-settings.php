@@ -103,22 +103,17 @@ class FSD_Settings {
 
 		add_settings_section(
 			'fsd_dev_api_section',
-			__( 'Freemius Developer-Keys (für das Affiliate-Anmeldeformular)', 'freemius-dashboard' ),
+			__( '⚠ Freemius Developer-Keys (nur für das Affiliate-Anmeldeformular)', 'freemius-dashboard' ),
 			array( $this, 'render_dev_section_intro' ),
 			self::PAGE_SLUG
 		);
 
 		add_settings_field(
 			'dev_scope_id',
-			__( 'Developer-ID', 'freemius-dashboard' ),
-			array( $this, 'render_text_field' ),
+			__( 'Developer-ID (NICHT die Produkt-ID!)', 'freemius-dashboard' ),
+			array( $this, 'render_dev_scope_id_field' ),
 			self::PAGE_SLUG,
-			'fsd_dev_api_section',
-			array(
-				'key'         => 'dev_scope_id',
-				'placeholder' => 'z. B. 1234',
-				'description' => __( 'Deine Developer-ID (Mein Profil → Keys), nicht die Produkt-ID.', 'freemius-dashboard' ),
-			)
+			'fsd_dev_api_section'
 		);
 
 		add_settings_field(
@@ -127,7 +122,11 @@ class FSD_Settings {
 			array( $this, 'render_text_field' ),
 			self::PAGE_SLUG,
 			'fsd_dev_api_section',
-			array( 'key' => 'dev_public_key', 'placeholder' => 'pk_...' )
+			array(
+				'key'         => 'dev_public_key',
+				'placeholder' => 'pk_...',
+				'description' => __( 'Muss zur selben Developer-ID oben gehören, nicht zu einem Produkt-Key.', 'freemius-dashboard' ),
+			)
 		);
 
 		add_settings_field(
@@ -273,6 +272,39 @@ class FSD_Settings {
 	}
 
 	public function render_dev_section_intro() {
-		echo '<p>' . esc_html__( 'Das Anlegen von Affiliates über die Freemius-API erfordert zwingend Developer-Keys ("Mein Profil → Keys") – Produkt-Keys werden von Freemius dafür mit "AccessForbidden" abgelehnt, unabhängig von der Auswahl oben. Diese Zugangsdaten werden ausschließlich für das [fsd_affiliate_signup]-Formular verwendet, alle anderen Funktionen nutzen weiterhin die Zugangsdaten oben.', 'freemius-dashboard' ) . '</p>';
+		?>
+		<p>
+			<?php esc_html_e( 'Das Anlegen von Affiliates über die Freemius-API erfordert zwingend Developer-Keys ("Mein Profil → Keys" – oben rechts im Freemius-Dashboard, NICHT in den Produkt-Einstellungen) – Produkt-Keys werden von Freemius dafür mit "AccessForbidden" abgelehnt, unabhängig von der Auswahl oben. Diese drei Felder werden ausschließlich für das [fsd_affiliate_signup]-Formular verwendet, alle anderen Funktionen (Dashboard, Käufe, Affiliates-Liste) nutzen weiterhin nur die Zugangsdaten im Abschnitt oben.', 'freemius-dashboard' ); ?>
+		</p>
+		<p class="description">
+			<?php esc_html_e( 'Häufigster Fehler ("Invalid Authorization header"): hier wird versehentlich die Produkt-ID statt der Developer-ID eingetragen, oder Public/Secret Key stammen aus unterschiedlichen Schlüsselpaaren. Alle drei Felder müssen aus derselben Seite "Mein Profil → Keys" kopiert werden.', 'freemius-dashboard' ); ?>
+		</p>
+		<?php
+	}
+
+	public function render_dev_scope_id_field() {
+		$settings   = self::get_settings();
+		$dev_id     = $settings['dev_scope_id'];
+		$product_id = $settings['product_id'];
+		$scope_id   = $settings['scope_id'];
+		?>
+		<input
+			type="text"
+			class="regular-text fsd-input"
+			id="fsd-field-dev_scope_id"
+			name="<?php echo esc_attr( FSD_OPTION_KEY . '[dev_scope_id]' ); ?>"
+			value="<?php echo esc_attr( $dev_id ); ?>"
+			placeholder="z. B. 987 (deine persönliche Developer-ID)"
+			autocomplete="off"
+		/>
+		<p class="description">
+			<?php esc_html_e( 'Zu finden unter „Mein Profil → Keys“ – eine kleine, produktunabhängige Zahl, verschieden von jeder Produkt- oder Affiliate-Programm-ID auf dieser Seite.', 'freemius-dashboard' ); ?>
+		</p>
+		<?php if ( '' !== $dev_id && ( $dev_id === $product_id || $dev_id === $scope_id ) ) : ?>
+			<p class="fsd-notice fsd-notice--error">
+				<?php esc_html_e( 'Warnung: Diese ID ist identisch mit der Produkt-ID / Scope-ID oben. Das ist bei einer Developer-ID unwahrscheinlich – bitte im Freemius-Dashboard unter „Mein Profil → Keys“ prüfen.', 'freemius-dashboard' ); ?>
+			</p>
+		<?php endif; ?>
+		<?php
 	}
 }
