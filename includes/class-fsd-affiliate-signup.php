@@ -2,10 +2,11 @@
 /**
  * Frontend-Shortcode [fsd_affiliate_signup]: Anmeldeformular, über das sich
  * Besucher als Freemius-Affiliate-Partner bewerben können. Vor dem Anlegen
- * muss die angegebene E-Mail-Adresse per Code oder Klick auf einen Link
- * bestätigt werden. Die Bewerbung wird per API als Affiliate mit Status
- * "pending" angelegt; Freigabe/Ablehnung erfolgt weiterhin manuell im
- * Freemius-Dashboard.
+ * muss die angegebene E-Mail-Adresse bestätigt werden: die Bewerbung
+ * verschickt einen Bestätigungslink per Mail; erst wenn dieser angeklickt
+ * wurde und der Besucher im Formular auf "Ich habe den Link bestätigt"
+ * klickt, wird der Affiliate per API mit Status "pending" angelegt.
+ * Freigabe/Ablehnung erfolgt weiterhin manuell im Freemius-Dashboard.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -14,19 +15,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class FSD_Affiliate_Signup {
 
-	const SHORTCODE          = 'fsd_affiliate_signup';
-	const NONCE_ACTION       = 'fsd_affiliate_signup';
-	const REQUEST_CODE_ACTION = 'fsd_affiliate_request_code';
-	const VERIFY_CODE_ACTION  = 'fsd_affiliate_verify_code';
-	const PENDING_TTL         = 15 * MINUTE_IN_SECONDS;
-	const COOLDOWN_TTL        = 2 * MINUTE_IN_SECONDS;
+	const SHORTCODE       = 'fsd_affiliate_signup';
+	const NONCE_ACTION    = 'fsd_affiliate_signup';
+	const REQUEST_ACTION  = 'fsd_affiliate_request_link';
+	const CONFIRM_ACTION  = 'fsd_affiliate_confirm_link';
+	const FINALIZE_ACTION = 'fsd_affiliate_finalize';
+	const PENDING_TTL     = 15 * MINUTE_IN_SECONDS;
+	const RESEND_COOLDOWN = 60; // Sekunden.
 
 	public function register() {
 		add_shortcode( self::SHORTCODE, array( $this, 'render_shortcode' ) );
-		add_action( 'wp_ajax_' . self::REQUEST_CODE_ACTION, array( $this, 'ajax_request_code' ) );
-		add_action( 'wp_ajax_nopriv_' . self::REQUEST_CODE_ACTION, array( $this, 'ajax_request_code' ) );
-		add_action( 'wp_ajax_' . self::VERIFY_CODE_ACTION, array( $this, 'ajax_verify_code' ) );
-		add_action( 'wp_ajax_nopriv_' . self::VERIFY_CODE_ACTION, array( $this, 'ajax_verify_code' ) );
+		add_action( 'wp_ajax_' . self::REQUEST_ACTION, array( $this, 'ajax_request_link' ) );
+		add_action( 'wp_ajax_nopriv_' . self::REQUEST_ACTION, array( $this, 'ajax_request_link' ) );
+		add_action( 'wp_ajax_' . self::CONFIRM_ACTION, array( $this, 'ajax_confirm_link' ) );
+		add_action( 'wp_ajax_nopriv_' . self::CONFIRM_ACTION, array( $this, 'ajax_confirm_link' ) );
+		add_action( 'wp_ajax_' . self::FINALIZE_ACTION, array( $this, 'ajax_finalize' ) );
+		add_action( 'wp_ajax_nopriv_' . self::FINALIZE_ACTION, array( $this, 'ajax_finalize' ) );
 	}
 
 	/**
@@ -56,12 +60,20 @@ class FSD_Affiliate_Signup {
 			'fsd-affiliate-signup',
 			'fsdAffiliateSignup',
 			array(
-				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-				'nonce'   => wp_create_nonce( self::NONCE_ACTION ),
-				'i18n'    => array(
-					'sending'  => __( 'Wird gesendet …', 'freemius-dashboard' ),
-					'checking' => __( 'Code wird geprüft …', 'freemius-dashboard' ),
-					'error'    => __( 'Fehler: ', 'freemius-dashboard' ),
+				'ajaxUrl'        => admin_url( 'admin-ajax.php' ),
+				'nonce'          => wp_create_nonce( self::NONCE_ACTION ),
+				'requestAction'  => self::REQUEST_ACTION,
+				'confirmAction'  => self::CONFIRM_ACTION,
+				'finalizeAction' => self::FINALIZE_ACTION,
+				'resendCooldown' => self::RESEND_COOLDOWN,
+				'i18n'           => array(
+					'sending'      => __( 'Wird gesendet …', 'freemius-dashboard' ),
+					'checking'     => __( 'Wird geprüft …', 'freemius-dashboard' ),
+					'error'        => __( 'Fehler: ', 'freemius-dashboard' ),
+					'resend'       => __( 'Link erneut senden', 'freemius-dashboard' ),
+					/* translators: %d: Sekunden bis erneutes Senden möglich ist */
+					'resendIn'     => __( 'Link erneut senden (%ds)', 'freemius-dashboard' ),
+					'linkConfirmed' => __( 'E-Mail bestätigt! Klicke jetzt auf „Ich habe den Link bestätigt“, um die Bewerbung abzuschließen.', 'freemius-dashboard' ),
 				),
 			)
 		);
@@ -102,12 +114,14 @@ class FSD_Affiliate_Signup {
 
 			<div class="fsd-card" id="fsd-affiliate-step-2" style="display: none;">
 				<p class="fsd-affiliate-form__field">
-					<label for="fsd-aff-code"><?php esc_html_e( 'Bestätigungscode (per E-Mail erhalten)', 'freemius-dashboard' ); ?></label>
-					<input class="fsd-input" type="text" id="fsd-aff-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+					<?php esc_html_e( 'Wir haben dir eine E-Mail mit einem Bestätigungslink geschickt. Bitte öffne die E-Mail, klicke dort auf „Bestätigen“ und komm danach hierher zurück.', 'freemius-dashboard' ); ?>
 				</p>
 				<input type="hidden" id="fsd-aff-token" name="token" value="" />
 				<p>
-					<button type="button" class="fsd-btn fsd-btn--filled" id="fsd-aff-verify-btn"><?php esc_html_e( 'Bestätigen & Absenden', 'freemius-dashboard' ); ?></button>
+					<button type="button" class="fsd-btn fsd-btn--filled" id="fsd-aff-confirm-btn"><?php esc_html_e( 'Ich habe den Link bestätigt', 'freemius-dashboard' ); ?></button>
+				</p>
+				<p>
+					<button type="button" class="fsd-btn fsd-btn--tonal" id="fsd-aff-resend-btn" disabled="disabled"><?php esc_html_e( 'Link erneut senden', 'freemius-dashboard' ); ?></button>
 					<button type="button" class="fsd-btn fsd-btn--tonal" id="fsd-aff-back-btn"><?php esc_html_e( 'Zurück', 'freemius-dashboard' ); ?></button>
 				</p>
 			</div>
@@ -119,10 +133,10 @@ class FSD_Affiliate_Signup {
 	}
 
 	/**
-	 * Schritt 1: validiert die Eingaben, legt die Bewerbung als "pending"
-	 * unter einem zufälligen Token zwischen und verschickt Code + Link.
+	 * Schritt 1: validiert die Eingaben, legt die Bewerbung als unbestätigt
+	 * unter einem zufälligen Token zwischen und verschickt den Bestätigungslink.
 	 */
-	public function ajax_request_code() {
+	public function ajax_request_link() {
 		check_ajax_referer( self::NONCE_ACTION, 'nonce' );
 
 		// Honeypot: Bots füllen üblicherweise auch versteckte Felder aus. Wir
@@ -130,7 +144,7 @@ class FSD_Affiliate_Signup {
 		if ( ! empty( $_POST['website'] ) ) {
 			wp_send_json_success(
 				array(
-					'message' => __( 'Wir haben dir einen Bestätigungscode per E-Mail geschickt.', 'freemius-dashboard' ),
+					'message' => __( 'Wir haben dir eine E-Mail mit einem Bestätigungslink geschickt.', 'freemius-dashboard' ),
 					'token'   => wp_generate_password( 32, false, false ),
 				)
 			);
@@ -145,7 +159,7 @@ class FSD_Affiliate_Signup {
 
 		$cooldown_key = 'fsd_aff_cooldown_' . md5( strtolower( $email ) );
 		if ( false !== get_transient( $cooldown_key ) ) {
-			wp_send_json_error( array( 'message' => __( 'Du hast bereits einen Code angefordert. Bitte prüfe dein Postfach (auch den Spam-Ordner) oder warte kurz, bevor du es erneut versuchst.', 'freemius-dashboard' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Bitte warte kurz, bevor du einen neuen Link anforderst.', 'freemius-dashboard' ) ) );
 		}
 
 		$throttle_key = 'fsd_aff_signup_' . md5( strtolower( $email ) );
@@ -159,12 +173,11 @@ class FSD_Affiliate_Signup {
 		$page_url     = isset( $_POST['page_url'] ) ? esc_url_raw( wp_unslash( $_POST['page_url'] ) ) : '';
 
 		$token = wp_generate_password( 32, false, false );
-		$code  = (string) wp_rand( 100000, 999999 );
 
 		set_transient(
 			'fsd_aff_pending_' . $token,
 			array(
-				'code'                          => $code,
+				'verified'                      => false,
 				'name'                          => $name,
 				'email'                         => $email,
 				'domain'                        => $domain,
@@ -173,47 +186,73 @@ class FSD_Affiliate_Signup {
 			),
 			self::PENDING_TTL
 		);
-		set_transient( $cooldown_key, 1, self::COOLDOWN_TTL );
+		set_transient( $cooldown_key, 1, self::RESEND_COOLDOWN );
 
-		$this->send_verification_email( $email, $name, $code, $token, $page_url );
+		$this->send_verification_email( $email, $name, $token, $page_url );
 
 		wp_send_json_success(
 			array(
-				'message' => __( 'Wir haben dir einen Bestätigungscode per E-Mail geschickt. Bitte gib ihn unten ein oder klicke auf den Link in der E-Mail.', 'freemius-dashboard' ),
+				'message' => __( 'Wir haben dir eine E-Mail mit einem Bestätigungslink geschickt. Bitte öffne die E-Mail und klicke auf den Link.', 'freemius-dashboard' ),
 				'token'   => $token,
 			)
 		);
 	}
 
 	/**
-	 * Schritt 2: prüft Token + Code (per Formular getippt oder aus dem
-	 * E-Mail-Link automatisch übernommen) und legt bei Erfolg sofort den
-	 * Affiliate an.
+	 * Wird automatisch aufgerufen, sobald eine Seite mit ?fsd_verify_token=…
+	 * in der URL geladen wird (also beim Klick auf den Link in der E-Mail).
+	 * Markiert die Bewerbung als bestätigt, legt aber noch keinen Affiliate an.
 	 */
-	public function ajax_verify_code() {
+	public function ajax_confirm_link() {
 		check_ajax_referer( self::NONCE_ACTION, 'nonce' );
 
 		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
-		$code  = isset( $_POST['code'] ) ? sanitize_text_field( wp_unslash( $_POST['code'] ) ) : '';
 
-		if ( '' === $token || '' === $code ) {
-			wp_send_json_error( array( 'message' => __( 'Bitte gib den Bestätigungscode ein.', 'freemius-dashboard' ) ) );
+		if ( '' === $token ) {
+			wp_send_json_error( array( 'message' => __( 'Ungültiger Bestätigungslink.', 'freemius-dashboard' ) ) );
 		}
 
-		$pending_key = 'fsd_aff_pending_' . $token;
-		$pending     = get_transient( $pending_key );
+		$key     = 'fsd_aff_pending_' . $token;
+		$pending = get_transient( $key );
 
 		if ( false === $pending || ! is_array( $pending ) ) {
-			wp_send_json_error( array( 'message' => __( 'Der Bestätigungscode ist abgelaufen oder ungültig. Bitte fordere einen neuen Code an.', 'freemius-dashboard' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Der Bestätigungslink ist abgelaufen oder ungültig. Bitte fordere einen neuen Link an.', 'freemius-dashboard' ) ) );
 		}
 
-		if ( ! hash_equals( (string) $pending['code'], $code ) ) {
-			wp_send_json_error( array( 'message' => __( 'Der eingegebene Code ist falsch.', 'freemius-dashboard' ) ) );
+		$pending['verified'] = true;
+		set_transient( $key, $pending, self::PENDING_TTL );
+
+		wp_send_json_success( array( 'message' => __( 'E-Mail bestätigt! Du kannst jetzt zum Anmeldeformular zurückkehren und dort auf „Ich habe den Link bestätigt“ klicken, um die Bewerbung abzuschließen.', 'freemius-dashboard' ) ) );
+	}
+
+	/**
+	 * Wird ausgelöst, wenn der Besucher im Formular auf "Ich habe den Link
+	 * bestätigt" klickt. Legt den Affiliate nur an, wenn der Link zuvor
+	 * tatsächlich bestätigt wurde (ajax_confirm_link).
+	 */
+	public function ajax_finalize() {
+		check_ajax_referer( self::NONCE_ACTION, 'nonce' );
+
+		$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+
+		if ( '' === $token ) {
+			wp_send_json_error( array( 'message' => __( 'Bitte fordere zuerst einen Bestätigungslink an.', 'freemius-dashboard' ) ) );
+		}
+
+		$key     = 'fsd_aff_pending_' . $token;
+		$pending = get_transient( $key );
+
+		if ( false === $pending || ! is_array( $pending ) ) {
+			wp_send_json_error( array( 'message' => __( 'Deine Sitzung ist abgelaufen. Bitte fordere einen neuen Bestätigungslink an.', 'freemius-dashboard' ) ) );
+		}
+
+		if ( empty( $pending['verified'] ) ) {
+			wp_send_json_error( array( 'message' => __( 'Bitte klicke zuerst auf den Bestätigungslink in der E-Mail, die wir dir geschickt haben.', 'freemius-dashboard' ) ) );
 		}
 
 		$throttle_key = 'fsd_aff_signup_' . md5( strtolower( $pending['email'] ) );
 		if ( false !== get_transient( $throttle_key ) ) {
-			delete_transient( $pending_key );
+			delete_transient( $key );
 			wp_send_json_error( array( 'message' => __( 'Du hast dich bereits beworben. Bitte warte auf die Bestätigungsmail von Freemius.', 'freemius-dashboard' ) ) );
 		}
 
@@ -235,7 +274,7 @@ class FSD_Affiliate_Signup {
 			)
 		);
 
-		delete_transient( $pending_key );
+		delete_transient( $key );
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
@@ -252,37 +291,28 @@ class FSD_Affiliate_Signup {
 		);
 	}
 
-	private function send_verification_email( $email, $name, $code, $token, $page_url ) {
+	private function send_verification_email( $email, $name, $token, $page_url ) {
 		$site_name = get_bloginfo( 'name' );
 
 		/* translators: %s: site name */
-		$subject = sprintf( __( 'Dein Bestätigungscode für das %s-Partnerprogramm', 'freemius-dashboard' ), $site_name );
+		$subject = sprintf( __( 'Bitte bestätige deine E-Mail für das %s-Partnerprogramm', 'freemius-dashboard' ), $site_name );
+
+		$link = add_query_arg(
+			array( 'fsd_verify_token' => $token ),
+			( '' !== $page_url ) ? $page_url : home_url( '/' )
+		);
 
 		$lines = array();
 		/* translators: %s: applicant name */
 		$lines[] = sprintf( __( 'Hallo %s,', 'freemius-dashboard' ), $name );
 		$lines[] = '';
-		$lines[] = __( 'bitte bestätige deine E-Mail-Adresse, um deine Bewerbung fürs Partnerprogramm abzuschließen.', 'freemius-dashboard' );
+		$lines[] = __( 'bitte bestätige deine E-Mail-Adresse, um deine Bewerbung fürs Partnerprogramm abzuschließen. Klicke dazu auf diesen Link:', 'freemius-dashboard' );
 		$lines[] = '';
-		/* translators: %s: 6-digit code */
-		$lines[] = sprintf( __( 'Dein Code: %s', 'freemius-dashboard' ), $code );
-
-		if ( '' !== $page_url ) {
-			$link = add_query_arg(
-				array(
-					'fsd_verify_token' => $token,
-					'fsd_verify_code'  => $code,
-				),
-				$page_url
-			);
-
-			$lines[] = '';
-			$lines[] = __( 'Oder klicke einfach auf diesen Link, dann wird die Bewerbung automatisch bestätigt:', 'freemius-dashboard' );
-			$lines[] = $link;
-		}
-
+		$lines[] = $link;
 		$lines[] = '';
-		$lines[] = __( 'Der Code ist 15 Minuten gültig. Falls du diese Bewerbung nicht angefordert hast, kannst du diese E-Mail einfach ignorieren.', 'freemius-dashboard' );
+		$lines[] = __( 'Kehre danach zum Anmeldeformular zurück und klicke dort auf „Ich habe den Link bestätigt“, um die Bewerbung abzuschließen.', 'freemius-dashboard' );
+		$lines[] = '';
+		$lines[] = __( 'Der Link ist 15 Minuten gültig. Falls du diese Bewerbung nicht angefordert hast, kannst du diese E-Mail einfach ignorieren.', 'freemius-dashboard' );
 
 		wp_mail( $email, $subject, implode( "\n", $lines ) );
 	}
