@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.6.1
+Stable tag: 1.6.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -60,6 +60,10 @@ Freemius sendet den Webhook bei jedem neuen Kauf, mit HMAC-SHA256 signiert (Head
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.6.2 =
+* Fix: Affiliate-Anlage schlug mit „Invalid request path“ fehl. Unter dem Developer-Scope heißt die Produkt-Ebene „plugins“ statt „products“ (`/v1/developers/{id}/plugins/{id}/aff/…`), entsprechend der offiziellen Freemius-SDK-Referenz.
+* Fix: Die angegebene Website/Domain wird jetzt ohne HTTP/S-Protokoll und ohne Pfad an Freemius übergeben (z. B. „example.com“ statt „https://example.com/“), wie von der API verlangt.
 
 = 1.6.1 =
 * Fix: Das Anlegen von Affiliates über das Anmeldeformular schlug mit „Invalid Authorization header“ (UnauthorizedAccess) fehl. Developer-Keys erfordern den Developer-Scope im Ressourcen-Pfad (`/v1/developers/{id}/products/{id}/…`); dieser wird jetzt korrekt aufgebaut.

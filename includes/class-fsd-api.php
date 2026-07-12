@@ -47,21 +47,24 @@ class FSD_Api {
 	}
 
 	/**
-	 * Baut einen Ressourcen-Pfad unterhalb des aktiven Scopes. Freemius verlangt
-	 * bei Developer-Keys den Developer-Scope als Präfix:
+	 * Baut einen Ressourcen-Pfad unterhalb des aktiven Scopes. Freemius adressiert
+	 * dasselbe Produkt je nach Scope unterschiedlich:
 	 *   Produkt-Keys:   /v1/products/{product_id}/{suffix}
-	 *   Developer-Keys: /v1/developers/{dev_id}/products/{product_id}/{suffix}
-	 * Wird die Produkt-Variante mit Developer-Keys signiert, antwortet Freemius
-	 * mit "Invalid Authorization header" (UnauthorizedAccess).
+	 *   Developer-Keys: /v1/developers/{dev_id}/plugins/{product_id}/{suffix}
+	 * Unter dem Developer-Scope heißt die Produkt-Ebene "plugins" (nicht
+	 * "products"), genau wie in der offiziellen Freemius-SDK-Referenz. Wird der
+	 * Produkt-Pfad mit Developer-Keys signiert, antwortet Freemius mit
+	 * "Invalid Authorization header"; wird "products" statt "plugins" verwendet,
+	 * mit "Invalid request path".
 	 *
-	 * @param string $suffix Pfad unterhalb von .../products/{product_id}/, z. B.
+	 * @param string $suffix Pfad unterhalb der Produkt-Ebene, z. B.
 	 *                        "aff/42/affiliates.json". Leer für das Produkt selbst.
 	 */
 	private function product_path( $suffix = '' ) {
 		$suffix = ltrim( (string) $suffix, '/' );
 
 		if ( 'developer' === $this->scope ) {
-			$base = sprintf( '/v1/developers/%d/products/%d', (int) $this->scope_id, (int) $this->product_id );
+			$base = sprintf( '/v1/developers/%d/plugins/%d', (int) $this->scope_id, (int) $this->product_id );
 		} else {
 			$base = sprintf( '/v1/products/%d', (int) $this->product_id );
 		}
@@ -321,8 +324,16 @@ class FSD_Api {
 			$body['paypal_email'] = $args['paypal_email'];
 		}
 
+		// Freemius erwartet die Domain ohne HTTP/S-Protokoll und ohne Pfad,
+		// z. B. "example.com" – nicht "https://example.com/".
 		if ( ! empty( $args['domain'] ) ) {
-			$body['additional_domains'] = array( $args['domain'] );
+			$domain = preg_replace( '~^[a-z][a-z0-9+.-]*://~i', '', (string) $args['domain'] );
+			$domain = preg_replace( '~[/?#].*$~', '', $domain );
+			$domain = trim( $domain );
+
+			if ( '' !== $domain ) {
+				$body['additional_domains'] = array( $domain );
+			}
 		}
 
 		if ( ! empty( $args['promotion_method_description'] ) ) {
