@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.4.0
+Stable tag: 1.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -58,6 +58,10 @@ Freemius sendet den Webhook bei jedem neuen Kauf, mit HMAC-SHA256 signiert (Head
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.6.0 =
+* Änderung: Die E-Mail-Bestätigung im Affiliate-Anmeldeformular läuft jetzt über einen sechsstelligen Code (reiner Text, kein Link). Der Code wird per E-Mail verschickt und im Formular eingegeben; danach wird die Bewerbung angelegt.
+* Änderung: Einstellungsseite überarbeitet. Statt eines „Scope“-Umschalters werden Developer-Keys, Produkt-Keys und die Affiliate-Programm-ID nun in getrennten Abschnitten abgefragt. Dashboard, Käufe und Affiliates-Liste nutzen die Produkt-Keys, das Anmeldeformular die Developer-Keys. Bestehende Einstellungen werden automatisch migriert.
 
 = 1.4.0 =
 * Neu: Shortcode `[fsd_affiliate_signup]` für ein öffentliches Anmeldeformular, über das sich Besucher als Affiliate-Partner bewerben können. Bewerbungen werden per API mit Status „pending“ bei Freemius angelegt und müssen im Freemius-Dashboard freigegeben werden.
