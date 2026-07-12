@@ -102,6 +102,12 @@
 	filter: brightness(0.97);
 }
 
+.fsd-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+	filter: none;
+}
+
 .fsd-test-result {
 	margin-left: 8px;
 	font-size: 13px;
