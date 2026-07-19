@@ -21,6 +21,15 @@
 			formData.append( 'action', 'fsd_test_connection' );
 			formData.append( 'nonce', fsdSettings.nonce );
 
+			// Aktuell im Formular stehende Werte mitschicken, damit getestet wird,
+			// was tatsächlich eingetragen ist – nicht nur der zuletzt gespeicherte Stand.
+			[ 'product_id', 'public_key', 'secret_key' ].forEach( function ( key ) {
+				var field = document.getElementById( 'fsd-field-' + key );
+				if ( field ) {
+					formData.append( key, field.value );
+				}
+			} );
+
 			fetch( fsdSettings.ajaxUrl, {
 				method: 'POST',
 				credentials: 'same-origin',

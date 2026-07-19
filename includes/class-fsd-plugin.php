@@ -203,7 +203,19 @@ class FSD_Plugin {
 		}
 
 		$settings = FSD_Settings::get_settings();
-		$api      = new FSD_Api( $settings['product_id'], $settings['public_key'], $settings['secret_key'], $settings['product_id'] );
+
+		// Die aktuell im Formular stehenden Werte testen, nicht nur die zuletzt
+		// gespeicherten – sonst prüft "Verbindung testen" unbemerkt veraltete
+		// Zugangsdaten, wenn noch nicht auf "Speichern" geklickt wurde. Das
+		// Secret-Feld bleibt beim Neuladen leer (siehe render_secret_field()),
+		// daher hier derselbe Fallback auf den gespeicherten Wert wie beim Speichern.
+		$product_id = isset( $_POST['product_id'] ) ? sanitize_text_field( wp_unslash( $_POST['product_id'] ) ) : $settings['product_id'];
+		$public_key = isset( $_POST['public_key'] ) ? sanitize_text_field( wp_unslash( $_POST['public_key'] ) ) : $settings['public_key'];
+		$secret_key = ( isset( $_POST['secret_key'] ) && '' !== trim( wp_unslash( $_POST['secret_key'] ) ) )
+			? sanitize_text_field( wp_unslash( $_POST['secret_key'] ) )
+			: $settings['secret_key'];
+
+		$api = new FSD_Api( $product_id, $public_key, $secret_key, $product_id );
 
 		if ( ! $api->is_configured() ) {
 			wp_send_json_error( array( 'message' => __( 'Bitte alle Felder ausfüllen und speichern.', 'freemius-dashboard' ) ) );
@@ -215,7 +227,7 @@ class FSD_Plugin {
 			wp_send_json_error( array( 'message' => $product->get_error_message() ) );
 		}
 
-		$title = isset( $product->title ) ? $product->title : ( isset( $product->slug ) ? $product->slug : $settings['product_id'] );
+		$title = isset( $product->title ) ? $product->title : ( isset( $product->slug ) ? $product->slug : $product_id );
 
 		wp_send_json_success(
 			array(
