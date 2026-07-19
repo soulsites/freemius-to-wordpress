@@ -290,6 +290,7 @@ class FSD_Settings {
 		<input
 			type="password"
 			class="regular-text fsd-input"
+			id="<?php echo esc_attr( 'fsd-field-' . $key ); ?>"
 			name="<?php echo esc_attr( FSD_OPTION_KEY . '[' . $key . ']' ); ?>"
 			value=""
 			placeholder="<?php echo $has_key ? esc_attr__( '•••••••••••••••• (unverändert lassen)', 'freemius-dashboard' ) : esc_attr__( 'sk_...', 'freemius-dashboard' ); ?>"
