@@ -16,6 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class FSD_Webhook {
 
 	const NAMESPACE = 'fsd/v1';
+	const CRON_HOOK = 'fsd_send_purchase_notification';
 
 	public function register_routes() {
 		register_rest_route(
@@ -27,6 +28,8 @@ class FSD_Webhook {
 				'permission_callback' => '__return_true',
 			)
 		);
+
+		add_action( self::CRON_HOOK, array( $this, 'notify_purchase' ) );
 	}
 
 	public function handle( WP_REST_Request $request ) {
@@ -43,13 +46,17 @@ class FSD_Webhook {
 		$event = json_decode( $raw_body );
 
 		if ( is_object( $event ) && ! empty( $event->type ) && 'payment.created' === $event->type ) {
-			$this->notify_purchase( $event );
+			// Der Mailversand (wp_mail) kann je nach SMTP-Konfiguration mehrere
+			// Sekunden dauern. Freemius bricht Webhook-Zustellungen nach 10 Sekunden
+			// als Timeout ab, daher wird die Benachrichtigung asynchron über WP-Cron
+			// verschickt und der Webhook sofort quittiert.
+			wp_schedule_single_event( time(), self::CRON_HOOK, array( $event ) );
 		}
 
 		return new WP_REST_Response( null, 200 );
 	}
 
-	private function notify_purchase( $event ) {
+	public function notify_purchase( $event ) {
 		$email_settings = FSD_Email_Settings::get_settings();
 
 		if ( empty( $email_settings['enabled'] ) || empty( $email_settings['recipients'] ) ) {
