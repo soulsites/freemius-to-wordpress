@@ -50,6 +50,8 @@ class FSD_Plugin {
 		add_action( 'rest_api_init', array( $this->webhook, 'register_routes' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_fsd_test_connection', array( $this, 'ajax_test_connection' ) );
+		add_action( 'wp_ajax_fsd_dashboard_page', array( $this, 'ajax_dashboard_page' ) );
+		add_action( 'wp_ajax_fsd_dashboard_totals', array( $this, 'ajax_dashboard_totals' ) );
 	}
 
 	public function register_menu() {
@@ -176,6 +178,21 @@ class FSD_Plugin {
 
 		if ( $dashboard_hook === $hook ) {
 			wp_enqueue_script( 'fsd-chart', FSD_PLUGIN_URL . 'assets/js/fsd-chart.js', array(), FSD_VERSION, true );
+			wp_enqueue_script( 'fsd-dashboard', FSD_PLUGIN_URL . 'assets/js/fsd-dashboard.js', array( 'fsd-chart' ), FSD_VERSION, true );
+			wp_localize_script(
+				'fsd-dashboard',
+				'fsdDashboard',
+				array(
+					'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+					'nonce'   => wp_create_nonce( FSD_Dashboard::NONCE_ACTION ),
+					'i18n'    => array(
+						'loadingChart' => __( 'Lade Diagrammdaten …', 'freemius-dashboard' ),
+						'loadingTable' => __( 'Lade Käufe … (%d geladen)', 'freemius-dashboard' ),
+						'empty'        => __( 'Keine Käufe in diesem Monat.', 'freemius-dashboard' ),
+						'error'        => __( 'Fehler: ', 'freemius-dashboard' ),
+					),
+				)
+			);
 		}
 
 		if ( $settings_hook === $hook ) {
@@ -193,6 +210,34 @@ class FSD_Plugin {
 				)
 			);
 		}
+	}
+
+	public function ajax_dashboard_page() {
+		check_ajax_referer( FSD_Dashboard::NONCE_ACTION, 'nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Keine Berechtigung.', 'freemius-dashboard' ) ), 403 );
+		}
+
+		if ( null === $this->dashboard ) {
+			$this->dashboard = new FSD_Dashboard();
+		}
+
+		$this->dashboard->ajax_get_page();
+	}
+
+	public function ajax_dashboard_totals() {
+		check_ajax_referer( FSD_Dashboard::NONCE_ACTION, 'nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Keine Berechtigung.', 'freemius-dashboard' ) ), 403 );
+		}
+
+		if ( null === $this->dashboard ) {
+			$this->dashboard = new FSD_Dashboard();
+		}
+
+		$this->dashboard->ajax_get_totals();
 	}
 
 	public function ajax_test_connection() {

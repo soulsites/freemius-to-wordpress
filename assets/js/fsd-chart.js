@@ -1,21 +1,15 @@
 /**
  * Minimalistischer, abhängigkeitsfreier Balken-Chart (Canvas 2D)
  * für die Käufe der letzten 30 Tage.
+ *
+ * Lädt die Daten nicht mehr selbst (früher aus einem eingebetteten
+ * JSON-Script-Tag) – die werden inzwischen von fsd-dashboard.js seitenweise
+ * per AJAX nachgeladen und per FSDChart.render() übergeben, damit die
+ * Dashboard-Seite sofort angezeigt werden kann, statt auf alle Freemius-
+ * Anfragen zu warten.
  */
-( function () {
+window.FSDChart = ( function () {
 	'use strict';
-
-	function readData() {
-		var node = document.getElementById( 'fsd-chart-data' );
-		if ( ! node ) {
-			return [];
-		}
-		try {
-			return JSON.parse( node.textContent || '[]' );
-		} catch ( e ) {
-			return [];
-		}
-	}
 
 	function drawChart( canvas, data ) {
 		var ctx = canvas.getContext( '2d' );
@@ -105,21 +99,6 @@
 		ctx.fill();
 	}
 
-	document.addEventListener( 'DOMContentLoaded', function () {
-		var canvas = document.getElementById( 'fsd-chart-canvas' );
-		if ( ! canvas ) {
-			return;
-		}
-
-		var data = readData();
-		var render = function () {
-			drawChart( canvas, data );
-		};
-
-		render();
-		window.addEventListener( 'resize', debounce( render, 150 ) );
-	} );
-
 	function debounce( fn, wait ) {
 		var timeout;
 		return function () {
@@ -127,4 +106,23 @@
 			timeout = setTimeout( fn, wait );
 		};
 	}
+
+	var current = { canvas: null, data: [] };
+
+	function render( canvas, data ) {
+		current.canvas = canvas;
+		current.data = data;
+		drawChart( canvas, data );
+	}
+
+	window.addEventListener(
+		'resize',
+		debounce( function () {
+			if ( current.canvas ) {
+				drawChart( current.canvas, current.data );
+			}
+		}, 150 )
+	);
+
+	return { render: render };
 } )();

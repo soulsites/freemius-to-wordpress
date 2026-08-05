@@ -1,6 +1,18 @@
 <?php
 /**
  * Dashboard-Seite: Käufe-Tabelle (Kalendermonat), Netto-Einnahmen, Chart der letzten 30 Tage.
+ *
+ * Bei vielen Käufen (mehrere hundert) kann das Laden aller Zahlungen über die
+ * Freemius-API mehrere Sekunden bis Minuten dauern (mehrere sequentielle
+ * HTTP-Anfragen, da Freemius die Ergebnisse seitenweise liefert). Würde das
+ * synchron beim Seitenaufruf passieren, würde die Admin-Seite entsprechend
+ * lange "hängen" – im ungünstigsten Fall länger als das PHP-Skript-Zeitlimit
+ * (max_execution_time), was zu einem Timeout ohne jede Ausgabe führen kann.
+ *
+ * Deshalb rendert render() nur noch das Seiten-Grundgerüst (Karten, Filter,
+ * Lade-Platzhalter). Die eigentlichen Zahlungsdaten werden anschließend per
+ * JavaScript (assets/js/fsd-dashboard.js) seitenweise über AJAX nachgeladen
+ * (fsd_dashboard_page) und die Tabelle/den Chart inkrementell befüllt.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -9,8 +21,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class FSD_Dashboard {
 
-	const PAGE_SLUG   = 'fsd-dashboard';
-	const CACHE_TTL   = 5 * MINUTE_IN_SECONDS;
+	const PAGE_SLUG = 'fsd-dashboard';
+	const CACHE_TTL = 5 * MINUTE_IN_SECONDS;
+	const NONCE_ACTION = 'fsd_dashboard';
 
 	/** @var FSD_Api */
 	private $api;
@@ -25,36 +38,43 @@ class FSD_Dashboard {
 		);
 	}
 
-	private function get_cached_payments( DateTimeInterface $from, DateTimeInterface $to ) {
-		$cache_key = 'fsd_payments_' . md5( $from->format( 'c' ) . '|' . $to->format( 'c' ) );
+	/**
+	 * Lädt eine einzelne Seite Zahlungen für den angegebenen Zeitraum, gecacht
+	 * pro Seite (nicht mehr als ein Gesamtblock), damit ein einzelner
+	 * AJAX-Request immer nur eine schnelle Freemius-Anfrage auslöst.
+	 *
+	 * @return array|WP_Error {payments: array, has_more: bool} oder WP_Error.
+	 */
+	private function get_cached_page( DateTimeInterface $from, DateTimeInterface $to, $page ) {
+		$cache_key = 'fsd_pay_p_' . md5( $from->format( 'c' ) . '|' . $to->format( 'c' ) . '|' . (int) $page );
 
 		$cached = get_transient( $cache_key );
 		if ( false !== $cached ) {
 			return $cached;
 		}
 
-		$payments = $this->api->get_payments( $from, $to );
+		$result = $this->api->get_payments_page( $from, $to, $page );
 
-		if ( is_wp_error( $payments ) ) {
-			return $payments;
+		if ( is_wp_error( $result ) ) {
+			return $result;
 		}
 
 		// Sandbox-/Test-Käufe (Freemius "environment" = 1) sind keine echten Verkäufe
 		// und dürfen weder in der Tabelle noch in den Summen auftauchen.
-		$payments = array_values(
+		$result['payments'] = array_values(
 			array_filter(
-				$payments,
+				$result['payments'],
 				static function ( $payment ) {
 					return ! self::is_sandbox( $payment );
 				}
 			)
 		);
 
-		$payments = $this->hydrate_missing_customers( $payments );
+		$result['payments'] = $this->hydrate_missing_customers( $result['payments'] );
 
-		set_transient( $cache_key, $payments, self::CACHE_TTL );
+		set_transient( $cache_key, $result, self::CACHE_TTL );
 
-		return $payments;
+		return $result;
 	}
 
 	/**
@@ -176,46 +196,40 @@ class FSD_Dashboard {
 		return '—';
 	}
 
-	private function build_last_30_days_series( $from, $to, $payments ) {
+	/**
+	 * @return array{0: DateTimeImmutable, 1: DateTimeImmutable}
+	 */
+	private static function last_30_days_range() {
+		$now = new DateTimeImmutable( 'now', new DateTimeZone( 'UTC' ) );
+
+		$from = $now->modify( '-29 days' )->setTime( 0, 0, 0 );
+		$to   = $now->setTime( 0, 0, 0 )->modify( '+1 day' );
+
+		return array( $from, $to );
+	}
+
+	/**
+	 * Baut das leere 30-Tage-Gerüst (ein Eintrag je Kalendertag, Anzahl 0), das
+	 * der Client beim ersten Chart-Batch erhält und anschließend mit den über
+	 * mehrere Batches gesammelten Zählungen auffüllt.
+	 */
+	private static function day_skeleton( DateTimeInterface $from, DateTimeInterface $to ) {
 		$tz     = wp_timezone();
-		$counts = array();
+		$cursor = $from instanceof DateTimeImmutable ? $from : DateTimeImmutable::createFromInterface( $from );
+		$cursor = $cursor->setTimezone( $tz );
+		$end    = $to instanceof DateTimeImmutable ? $to : DateTimeImmutable::createFromInterface( $to );
+		$end    = $end->setTimezone( $tz );
 
-		$cursor = $from;
-		while ( $cursor < $to ) {
-			$counts[ $cursor->format( 'Y-m-d' ) ] = 0;
-			$cursor                                = $cursor->modify( '+1 day' );
-		}
-
-		if ( is_array( $payments ) ) {
-			foreach ( $payments as $payment ) {
-				if ( self::is_refund( $payment ) || empty( $payment->created ) ) {
-					continue;
-				}
-
-				try {
-					$created = new DateTime( $payment->created, new DateTimeZone( 'UTC' ) );
-					$created->setTimezone( $tz );
-				} catch ( Exception $e ) {
-					continue;
-				}
-
-				$day = $created->format( 'Y-m-d' );
-				if ( isset( $counts[ $day ] ) ) {
-					++$counts[ $day ];
-				}
-			}
-		}
-
-		$series = array();
-		foreach ( $counts as $day => $count ) {
-			$series[] = array(
-				'date'  => $day,
-				'label' => date_i18n( 'd.m.', strtotime( $day ) ),
-				'count' => $count,
+		$days = array();
+		while ( $cursor < $end ) {
+			$days[] = array(
+				'date'  => $cursor->format( 'Y-m-d' ),
+				'label' => date_i18n( 'd.m.', $cursor->getTimestamp() ),
 			);
+			$cursor = $cursor->modify( '+1 day' );
 		}
 
-		return $series;
+		return $days;
 	}
 
 	public function render() {
@@ -237,32 +251,17 @@ class FSD_Dashboard {
 			return;
 		}
 
-		list( $from, $to, $ym ) = FSD_Month_Filter::get_selected_range();
+		list( , , $ym ) = FSD_Month_Filter::get_selected_range();
 
-		$payments = $this->get_cached_payments( $from, $to );
-
-		$now       = new DateTimeImmutable( 'now', new DateTimeZone( 'UTC' ) );
-		$from_30   = $now->modify( '-29 days' )->setTime( 0, 0, 0 );
-		$to_30     = $now->setTime( 0, 0, 0 )->modify( '+1 day' );
-		$payments_30 = $this->get_cached_payments( $from_30, $to_30 );
-
-		echo '<div class="wrap fsd-wrap">';
+		echo '<div class="wrap fsd-wrap" id="fsd-dashboard-app" data-ym="' . esc_attr( $ym ) . '">';
 		echo '<h1 class="fsd-title">' . esc_html__( 'Freemius Dashboard', 'freemius-dashboard' ) . '</h1>';
-
-		if ( is_wp_error( $payments ) ) {
-			printf( '<div class="fsd-card fsd-notice fsd-notice--error">%s</div>', esc_html( $payments->get_error_message() ) );
-		}
 
 		// Chart-Karte.
 		echo '<div class="fsd-card">';
 		echo '<h2 class="fsd-card__title">' . esc_html__( 'Käufe der letzten 30 Tage', 'freemius-dashboard' ) . '</h2>';
-		if ( is_wp_error( $payments_30 ) ) {
-			printf( '<p class="fsd-notice fsd-notice--error">%s</p>', esc_html( $payments_30->get_error_message() ) );
-		} else {
-			$series = $this->build_last_30_days_series( $from_30, $to_30, $payments_30 );
-			echo '<div class="fsd-chart"><canvas id="fsd-chart-canvas" height="220"></canvas></div>';
-			echo '<script type="application/json" id="fsd-chart-data">' . wp_json_encode( $series ) . '</script>';
-		}
+		echo '<div class="fsd-chart"><canvas id="fsd-chart-canvas" height="220"></canvas></div>';
+		echo '<p class="fsd-loading" id="fsd-chart-loading">' . esc_html__( 'Lade Diagrammdaten …', 'freemius-dashboard' ) . '</p>';
+		echo '<p class="fsd-notice fsd-notice--error" id="fsd-chart-error" style="display:none;"></p>';
 		echo '</div>';
 
 		// Filter + Tabelle.
@@ -272,24 +271,20 @@ class FSD_Dashboard {
 		FSD_Month_Filter::render( self::PAGE_SLUG, $ym );
 		echo '</div>';
 
-		if ( ! is_wp_error( $payments ) ) {
-			$this->render_table( $payments );
-			$this->render_totals( $payments );
-		}
+		echo '<p class="fsd-notice fsd-notice--error" id="fsd-table-error" style="display:none;"></p>';
+		$this->render_table_shell();
+		echo '<p class="fsd-loading" id="fsd-table-loading">' . esc_html__( 'Lade Käufe …', 'freemius-dashboard' ) . '</p>';
+
+		echo '<div class="fsd-totals" id="fsd-totals" style="display:none;">';
+		echo '<span class="fsd-totals__label">' . esc_html__( 'Einnahmen netto', 'freemius-dashboard' ) . '</span>';
+		echo '<span id="fsd-totals-values"></span>';
 		echo '</div>';
 
-		echo '</div>';
+		echo '</div>'; // .fsd-card
+		echo '</div>'; // .wrap
 	}
 
-	private function render_table( $payments ) {
-		usort(
-			$payments,
-			static function ( $a, $b ) {
-				return strcmp( (string) ( $b->created ?? '' ), (string) ( $a->created ?? '' ) );
-			}
-		);
-
-		$columns = 17;
+	private function render_table_shell() {
 		?>
 		<div class="fsd-table-wrap">
 			<table class="fsd-table">
@@ -314,97 +309,201 @@ class FSD_Dashboard {
 						<th><?php esc_html_e( 'Aktualisiert', 'freemius-dashboard' ); ?></th>
 					</tr>
 				</thead>
-				<tbody>
-					<?php if ( empty( $payments ) ) : ?>
-						<tr>
-							<td colspan="<?php echo (int) $columns; ?>" class="fsd-table__empty"><?php esc_html_e( 'Keine Käufe in diesem Monat.', 'freemius-dashboard' ); ?></td>
-						</tr>
-					<?php else : ?>
-						<?php foreach ( $payments as $payment ) : ?>
-							<?php
-							list( $name, $email ) = self::customer_label( $payment );
-							$is_sub               = self::is_subscription_payment( $payment );
-							$is_refund            = self::is_refund( $payment );
-							$has_coupon           = self::has_coupon( $payment );
-							$gross                = self::gross_amount( $payment );
-							$vat                  = self::vat_amount( $payment );
-							$net                  = self::net_amount( $payment );
-							$currency             = isset( $payment->currency ) ? strtoupper( $payment->currency ) : '';
-							$created              = ! empty( $payment->created ) ? mysql2date( 'd.m.Y H:i', $payment->created ) : '—';
-							$updated              = ! empty( $payment->updated ) ? mysql2date( 'd.m.Y H:i', $payment->updated ) : '—';
-							?>
-							<tr>
-								<td><?php echo esc_html( self::field( $payment, 'id' ) ); ?></td>
-								<td><?php echo esc_html( $created ); ?></td>
-								<td>
-									<div class="fsd-customer">
-										<span class="fsd-customer__name"><?php echo esc_html( $name ); ?></span>
-										<?php if ( $email ) : ?>
-											<span class="fsd-customer__email"><?php echo esc_html( $email ); ?></span>
-										<?php endif; ?>
-									</div>
-								</td>
-								<td><?php echo esc_html( strtoupper( self::field( $payment, 'country_code' ) ) ); ?></td>
-								<td><?php echo esc_html( self::plan_label( $payment ) ); ?></td>
-								<td>
-									<span class="fsd-chip <?php echo $is_sub ? 'fsd-chip--sub' : 'fsd-chip--lifetime'; ?>">
-										<?php echo $is_sub ? esc_html__( 'Abo', 'freemius-dashboard' ) : esc_html__( 'Lifetime', 'freemius-dashboard' ); ?>
-									</span>
-									<?php if ( $is_refund ) : ?>
-										<span class="fsd-chip fsd-chip--refund"><?php esc_html_e( 'Erstattung', 'freemius-dashboard' ); ?></span>
-									<?php endif; ?>
-									<?php if ( $has_coupon ) : ?>
-										<span class="fsd-chip fsd-chip--coupon"><?php esc_html_e( 'Gutschein', 'freemius-dashboard' ); ?></span>
-									<?php endif; ?>
-								</td>
-								<td><?php echo esc_html( self::field( $payment, 'gateway' ) ); ?></td>
-								<td class="fsd-table__amount">
-									<?php echo esc_html( number_format_i18n( $gross, 2 ) . ' ' . $currency ); ?>
-								</td>
-								<td class="fsd-table__amount">
-									<?php echo esc_html( number_format_i18n( $vat, 2 ) . ' ' . $currency ); ?>
-								</td>
-								<td class="fsd-table__amount <?php echo $net < 0 ? 'fsd-amount--negative' : ''; ?>">
-									<?php echo esc_html( number_format_i18n( $net, 2 ) . ' ' . $currency ); ?>
-								</td>
-								<td><?php echo esc_html( self::field( $payment, 'vat_id' ) ); ?></td>
-								<td><?php echo esc_html( self::field( $payment, 'coupon_id' ) ); ?></td>
-								<td><?php echo esc_html( self::field( $payment, 'external_id' ) ); ?></td>
-								<td><?php echo esc_html( self::field( $payment, 'license_id' ) ); ?></td>
-								<td><?php echo esc_html( self::field( $payment, 'subscription_id' ) ); ?></td>
-								<td><?php echo esc_html( self::field( $payment, 'source' ) ); ?></td>
-								<td><?php echo esc_html( $updated ); ?></td>
-							</tr>
-						<?php endforeach; ?>
-					<?php endif; ?>
-				</tbody>
+				<tbody id="fsd-table-body"></tbody>
 			</table>
 		</div>
 		<?php
 	}
 
-	private function render_totals( $payments ) {
-		$totals = array();
+	/**
+	 * Rendert eine einzelne Käufe-Tabellenzeile. Wird pro AJAX-Batch für jede
+	 * geladene Zahlung aufgerufen und die entstehende HTML-Zeile an den
+	 * Client zurückgegeben – die Formatierung/Escaping bleibt damit an einer
+	 * einzigen Stelle in PHP statt in JavaScript dupliziert zu werden.
+	 */
+	private function render_row( $payment ) {
+		list( $name, $email ) = self::customer_label( $payment );
+		$is_sub               = self::is_subscription_payment( $payment );
+		$is_refund            = self::is_refund( $payment );
+		$has_coupon           = self::has_coupon( $payment );
+		$gross                = self::gross_amount( $payment );
+		$vat                  = self::vat_amount( $payment );
+		$net                  = self::net_amount( $payment );
+		$currency             = isset( $payment->currency ) ? strtoupper( $payment->currency ) : '';
+		$created              = ! empty( $payment->created ) ? mysql2date( 'd.m.Y H:i', $payment->created ) : '—';
+		$updated              = ! empty( $payment->updated ) ? mysql2date( 'd.m.Y H:i', $payment->updated ) : '—';
+
+		ob_start();
+		?>
+		<tr>
+			<td><?php echo esc_html( self::field( $payment, 'id' ) ); ?></td>
+			<td><?php echo esc_html( $created ); ?></td>
+			<td>
+				<div class="fsd-customer">
+					<span class="fsd-customer__name"><?php echo esc_html( $name ); ?></span>
+					<?php if ( $email ) : ?>
+						<span class="fsd-customer__email"><?php echo esc_html( $email ); ?></span>
+					<?php endif; ?>
+				</div>
+			</td>
+			<td><?php echo esc_html( strtoupper( self::field( $payment, 'country_code' ) ) ); ?></td>
+			<td><?php echo esc_html( self::plan_label( $payment ) ); ?></td>
+			<td>
+				<span class="fsd-chip <?php echo $is_sub ? 'fsd-chip--sub' : 'fsd-chip--lifetime'; ?>">
+					<?php echo $is_sub ? esc_html__( 'Abo', 'freemius-dashboard' ) : esc_html__( 'Lifetime', 'freemius-dashboard' ); ?>
+				</span>
+				<?php if ( $is_refund ) : ?>
+					<span class="fsd-chip fsd-chip--refund"><?php esc_html_e( 'Erstattung', 'freemius-dashboard' ); ?></span>
+				<?php endif; ?>
+				<?php if ( $has_coupon ) : ?>
+					<span class="fsd-chip fsd-chip--coupon"><?php esc_html_e( 'Gutschein', 'freemius-dashboard' ); ?></span>
+				<?php endif; ?>
+			</td>
+			<td><?php echo esc_html( self::field( $payment, 'gateway' ) ); ?></td>
+			<td class="fsd-table__amount">
+				<?php echo esc_html( number_format_i18n( $gross, 2 ) . ' ' . $currency ); ?>
+			</td>
+			<td class="fsd-table__amount">
+				<?php echo esc_html( number_format_i18n( $vat, 2 ) . ' ' . $currency ); ?>
+			</td>
+			<td class="fsd-table__amount <?php echo $net < 0 ? 'fsd-amount--negative' : ''; ?>">
+				<?php echo esc_html( number_format_i18n( $net, 2 ) . ' ' . $currency ); ?>
+			</td>
+			<td><?php echo esc_html( self::field( $payment, 'vat_id' ) ); ?></td>
+			<td><?php echo esc_html( self::field( $payment, 'coupon_id' ) ); ?></td>
+			<td><?php echo esc_html( self::field( $payment, 'external_id' ) ); ?></td>
+			<td><?php echo esc_html( self::field( $payment, 'license_id' ) ); ?></td>
+			<td><?php echo esc_html( self::field( $payment, 'subscription_id' ) ); ?></td>
+			<td><?php echo esc_html( self::field( $payment, 'source' ) ); ?></td>
+			<td><?php echo esc_html( $updated ); ?></td>
+		</tr>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	private function render_totals_html( array $totals ) {
+		if ( empty( $totals ) ) {
+			return '<span class="fsd-totals__value">0,00</span>';
+		}
+
+		$html = '';
+		foreach ( $totals as $currency => $sum ) {
+			$html .= '<span class="fsd-totals__value">' . esc_html( number_format_i18n( $sum, 2 ) . ' ' . $currency ) . '</span>';
+		}
+
+		return $html;
+	}
+
+	/**
+	 * AJAX-Handler: liefert eine einzelne Seite Zahlungen (Tabelle oder Chart)
+	 * als JSON zurück. Wird von assets/js/fsd-dashboard.js wiederholt
+	 * aufgerufen, bis has_more=false ist.
+	 */
+	public function ajax_get_page() {
+		$scope = isset( $_POST['scope'] ) ? sanitize_key( wp_unslash( $_POST['scope'] ) ) : '';
+		$page  = isset( $_POST['page'] ) ? max( 0, (int) $_POST['page'] ) : 0;
+
+		if ( ! in_array( $scope, array( 'table', 'chart' ), true ) ) {
+			wp_send_json_error( array( 'message' => __( 'Ungültige Anfrage.', 'freemius-dashboard' ) ) );
+		}
+
+		if ( ! $this->api->is_configured() ) {
+			wp_send_json_error( array( 'message' => __( 'Bitte hinterlege zunächst deine Freemius API-Zugangsdaten.', 'freemius-dashboard' ) ) );
+		}
+
+		if ( 'table' === $scope ) {
+			$ym = isset( $_POST['ym'] ) ? sanitize_text_field( wp_unslash( $_POST['ym'] ) ) : '';
+			list( $from, $to ) = FSD_Month_Filter::range_for_ym( $ym );
+		} else {
+			list( $from, $to ) = self::last_30_days_range();
+		}
+
+		$result = $this->get_cached_page( $from, $to, $page );
+
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
+		}
+
+		$payments = $result['payments'];
+
+		if ( 'table' === $scope ) {
+			usort(
+				$payments,
+				static function ( $a, $b ) {
+					return strcmp( (string) ( $b->created ?? '' ), (string) ( $a->created ?? '' ) );
+				}
+			);
+
+			$rows_html = '';
+			$nets      = array();
+
+			foreach ( $payments as $payment ) {
+				$rows_html .= $this->render_row( $payment );
+				$nets[]     = array(
+					'currency' => isset( $payment->currency ) ? strtoupper( $payment->currency ) : '—',
+					'net'      => self::net_amount( $payment ),
+				);
+			}
+
+			wp_send_json_success(
+				array(
+					'rows_html' => $rows_html,
+					'nets'      => $nets,
+					'has_more'  => $result['has_more'],
+				)
+			);
+		}
+
+		// scope === 'chart'
+		$tz     = wp_timezone();
+		$counts = array();
 
 		foreach ( $payments as $payment ) {
-			$currency = isset( $payment->currency ) ? strtoupper( $payment->currency ) : '—';
-			if ( ! isset( $totals[ $currency ] ) ) {
-				$totals[ $currency ] = 0.0;
+			if ( self::is_refund( $payment ) || empty( $payment->created ) ) {
+				continue;
 			}
-			$totals[ $currency ] += self::net_amount( $payment );
+
+			try {
+				$created = new DateTime( $payment->created, new DateTimeZone( 'UTC' ) );
+				$created->setTimezone( $tz );
+			} catch ( Exception $e ) {
+				continue;
+			}
+
+			$day             = $created->format( 'Y-m-d' );
+			$counts[ $day ]  = isset( $counts[ $day ] ) ? $counts[ $day ] + 1 : 1;
 		}
 
-		echo '<div class="fsd-totals">';
-		echo '<span class="fsd-totals__label">' . esc_html__( 'Einnahmen netto', 'freemius-dashboard' ) . '</span>';
+		$response = array(
+			'counts'   => $counts,
+			'has_more' => $result['has_more'],
+		);
 
-		if ( empty( $totals ) ) {
-			echo '<span class="fsd-totals__value">0,00</span>';
-		} else {
-			foreach ( $totals as $currency => $sum ) {
-				echo '<span class="fsd-totals__value">' . esc_html( number_format_i18n( $sum, 2 ) . ' ' . $currency ) . '</span>';
+		if ( 0 === $page ) {
+			$response['days'] = self::day_skeleton( $from, $to );
+		}
+
+		wp_send_json_success( $response );
+	}
+
+	/**
+	 * AJAX-Handler: formatiert die vom Client über alle Batches aufsummierten
+	 * Netto-Summen je Währung. Die Summierung selbst passiert im Client (reine
+	 * Arithmetik), die lokalisierte Zahlenformatierung (number_format_i18n)
+	 * bleibt dadurch serverseitig einheitlich.
+	 */
+	public function ajax_get_totals() {
+		$raw    = isset( $_POST['totals'] ) ? wp_unslash( $_POST['totals'] ) : '';
+		$parsed = json_decode( (string) $raw, true );
+
+		$totals = array();
+		if ( is_array( $parsed ) ) {
+			foreach ( $parsed as $currency => $sum ) {
+				$currency               = sanitize_text_field( (string) $currency );
+				$totals[ $currency ] = (float) $sum;
 			}
 		}
 
-		echo '</div>';
+		wp_send_json_success( array( 'html' => $this->render_totals_html( $totals ) ) );
 	}
 }
