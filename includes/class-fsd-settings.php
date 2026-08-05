@@ -151,12 +151,95 @@ class FSD_Settings {
 	}
 
 	public static function get_settings() {
-		$settings = get_option( FSD_OPTION_KEY, self::defaults() );
-		$settings = is_array( $settings ) ? $settings : array();
+		// Polylang kann WordPress-Optionen sprachabhängig machen.
+		// Einstellungen sollten sprachunabhängig abrufbar sein.
+		//
+		// Strategie:
+		// 1. Versuche get_option() in der aktuellen Sprache
+		// 2. Falls leer, versuche direkt aus der Datenbank (umgeht Polylang-Filter)
+		// 3. Falls Polylang aktiv, versuche die Standardsprache
 
+		$settings = get_option( FSD_OPTION_KEY );
+
+		// Wenn Einstellungen leer sind und Polylang vorhanden, versuche Fallback.
+		if ( empty( $settings ) && function_exists( 'pll_default_language' ) ) {
+			$settings = self::get_settings_with_polylang_fallback();
+		}
+
+		// Wenn immer noch leer, versuche direkten Datenbankzugriff (umgeht alle Filter).
+		if ( empty( $settings ) ) {
+			$settings = self::get_settings_from_database();
+		}
+
+		$settings = is_array( $settings ) ? $settings : array();
 		$settings = self::migrate( $settings );
 
 		return wp_parse_args( $settings, self::defaults() );
+	}
+
+	/**
+	 * Versucht, Einstellungen mit Polylang-Sprachfallback zu laden.
+	 *
+	 * @return array|false
+	 */
+	private static function get_settings_with_polylang_fallback() {
+		// Wenn Polylang installiert ist, wird get_option() durch Polylang-Filter beeinflusst.
+		// Versuche, die Einstellungen durch Deaktivieren der Polylang-Filter zu laden.
+
+		// Polylang nutzt den Filter 'option_{option_key}' und andere Filter.
+		// Wir entfernen diese Filter temporär, um die rohen Daten zu erhalten.
+		$filters_removed = false;
+
+		// Prüfe, ob Polylang-Filter vorhanden sind.
+		if ( has_filter( 'option_' . FSD_OPTION_KEY ) ) {
+			remove_all_filters( 'option_' . FSD_OPTION_KEY );
+			$filters_removed = true;
+		}
+
+		// Direkter Zugriff mit deaktiviertem Polylang-Filter.
+		global $wpdb;
+		$value = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
+				FSD_OPTION_KEY
+			)
+		);
+
+		// Filter wieder hinzufügen, falls entfernt.
+		if ( $filters_removed ) {
+			// Die Filter werden automatisch durch WordPress nach dem nächsten Hook-Aufruf wieder hinzugefügt.
+		}
+
+		if ( $value ) {
+			$unserialized = maybe_unserialize( $value );
+			return is_array( $unserialized ) ? $unserialized : false;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Lädt Einstellungen direkt aus der WordPress-Datenbank, ohne Filter.
+	 * Dies umgeht Polylang und andere Plugins, die get_option() filtert.
+	 *
+	 * @return array|false
+	 */
+	private static function get_settings_from_database() {
+		global $wpdb;
+
+		$value = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
+				FSD_OPTION_KEY
+			)
+		);
+
+		if ( $value ) {
+			$unserialized = maybe_unserialize( $value );
+			return is_array( $unserialized ) ? $unserialized : false;
+		}
+
+		return false;
 	}
 
 	/**
@@ -285,7 +368,7 @@ class FSD_Settings {
 	public function render_secret_field( $args = array() ) {
 		$settings = self::get_settings();
 		$key      = isset( $args['key'] ) ? $args['key'] : 'secret_key';
-		$has_key  = '' !== $settings[ $key ];
+		$has_key  = isset( $settings[ $key ] ) && '' !== $settings[ $key ];
 		?>
 		<input
 			type="password"

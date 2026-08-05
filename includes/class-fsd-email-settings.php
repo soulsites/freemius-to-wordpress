@@ -86,7 +86,26 @@ class FSD_Email_Settings {
 	}
 
 	public static function get_settings() {
-		$settings = get_option( FSD_EMAIL_OPTION_KEY, self::defaults() );
+		// Wie in FSD_Settings: auch hier kann Polylang Probleme verursachen.
+		// Versuche direkten Datenbankzugriff, wenn get_option() keine Einstellungen zurückgibt.
+
+		$settings = get_option( FSD_EMAIL_OPTION_KEY );
+
+		// Falls leer, versuche direkt aus der Datenbank (umgeht Polylang-Filter).
+		if ( empty( $settings ) ) {
+			global $wpdb;
+			$value = $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
+					FSD_EMAIL_OPTION_KEY
+				)
+			);
+
+			if ( $value ) {
+				$settings = maybe_unserialize( $value );
+			}
+		}
+
 		$settings = is_array( $settings ) ? $settings : array();
 
 		return wp_parse_args( $settings, self::defaults() );
@@ -129,7 +148,8 @@ class FSD_Email_Settings {
 	}
 
 	public function render_section_intro() {
-		$secret_key = FSD_Settings::get_settings()['secret_key'];
+		$settings   = FSD_Settings::get_settings();
+		$secret_key = $settings['secret_key'] ?? '';
 		?>
 		<p>
 			<?php esc_html_e( 'Freemius kann bei jedem Kauf einen Webhook an deine Website senden. Trage dazu die unten angezeigte URL im Freemius Developer-Dashboard unter „Events & Webhooks" als Endpoint ein und aktiviere mindestens das Event „payment.created". Diese Seite legt fest, an welche E-Mail-Adressen deine Website daraufhin automatisch eine Nachricht mit den Kaufinformationen verschickt.', 'freemius-dashboard' ); ?>
