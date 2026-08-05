@@ -152,23 +152,22 @@ class FSD_Settings {
 
 	public static function get_settings() {
 		// Polylang kann WordPress-Optionen sprachabhängig machen.
-		// Einstellungen sollten sprachunabhängig abrufbar sein.
-		//
-		// Strategie:
-		// 1. Versuche get_option() in der aktuellen Sprache
-		// 2. Falls leer, versuche direkt aus der Datenbank (umgeht Polylang-Filter)
-		// 3. Falls Polylang aktiv, versuche die Standardsprache
+		// Diese Einstellungen sollten aber unabhängig von der Sprache abrufbar sein.
+		// Nutze einen Filter, um Polylang zu deaktivieren, bevor wir die Option laden.
 
-		$settings = get_option( FSD_OPTION_KEY );
-
-		// Wenn Einstellungen leer sind und Polylang vorhanden, versuche Fallback.
-		if ( empty( $settings ) && function_exists( 'pll_default_language' ) ) {
-			$settings = self::get_settings_with_polylang_fallback();
+		// Speichere den Zustand der Polylang-Filter.
+		$polylang_filters = null;
+		if ( function_exists( 'pll_current_language' ) ) {
+			// Polylang ist installiert – merke die aktuellen Filter.
+			$polylang_filters = self::disable_polylang_filters();
 		}
 
-		// Wenn immer noch leer, versuche direkten Datenbankzugriff (umgeht alle Filter).
-		if ( empty( $settings ) ) {
-			$settings = self::get_settings_from_database();
+		// Lade die Einstellungen normal (ohne Polylang-Filterung).
+		$settings = get_option( FSD_OPTION_KEY, self::defaults() );
+
+		// Stelle die Filter wieder her.
+		if ( null !== $polylang_filters ) {
+			self::restore_polylang_filters( $polylang_filters );
 		}
 
 		$settings = is_array( $settings ) ? $settings : array();
@@ -178,68 +177,41 @@ class FSD_Settings {
 	}
 
 	/**
-	 * Versucht, Einstellungen mit Polylang-Sprachfallback zu laden.
+	 * Deaktiviert Polylang-Filter temporär und speichert ihren Zustand.
 	 *
-	 * @return array|false
+	 * @return array Der gespeicherte Filter-Zustand
 	 */
-	private static function get_settings_with_polylang_fallback() {
-		// Wenn Polylang installiert ist, wird get_option() durch Polylang-Filter beeinflusst.
-		// Versuche, die Einstellungen durch Deaktivieren der Polylang-Filter zu laden.
+	private static function disable_polylang_filters() {
+		$filters_state = array();
 
-		// Polylang nutzt den Filter 'option_{option_key}' und andere Filter.
-		// Wir entfernen diese Filter temporär, um die rohen Daten zu erhalten.
-		$filters_removed = false;
-
-		// Prüfe, ob Polylang-Filter vorhanden sind.
-		if ( has_filter( 'option_' . FSD_OPTION_KEY ) ) {
-			remove_all_filters( 'option_' . FSD_OPTION_KEY );
-			$filters_removed = true;
+		// Entferne den Polylang-Filter für diese Option.
+		$filter_name = 'option_' . FSD_OPTION_KEY;
+		if ( has_filter( $filter_name ) ) {
+			global $wp_filter;
+			if ( isset( $wp_filter[ $filter_name ] ) ) {
+				// Speichere den aktuellen Zustand.
+				$filters_state[ $filter_name ] = $wp_filter[ $filter_name ];
+				// Entferne alle Filter für diese Option.
+				remove_all_filters( $filter_name );
+			}
 		}
 
-		// Direkter Zugriff mit deaktiviertem Polylang-Filter.
-		global $wpdb;
-		$value = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
-				FSD_OPTION_KEY
-			)
-		);
-
-		// Filter wieder hinzufügen, falls entfernt.
-		if ( $filters_removed ) {
-			// Die Filter werden automatisch durch WordPress nach dem nächsten Hook-Aufruf wieder hinzugefügt.
-		}
-
-		if ( $value ) {
-			$unserialized = maybe_unserialize( $value );
-			return is_array( $unserialized ) ? $unserialized : false;
-		}
-
-		return false;
+		return $filters_state;
 	}
 
 	/**
-	 * Lädt Einstellungen direkt aus der WordPress-Datenbank, ohne Filter.
-	 * Dies umgeht Polylang und andere Plugins, die get_option() filtert.
+	 * Stellt die Polylang-Filter wieder her.
 	 *
-	 * @return array|false
+	 * @param array $filters_state Der gespeicherte Filter-Zustand
 	 */
-	private static function get_settings_from_database() {
-		global $wpdb;
+	private static function restore_polylang_filters( $filters_state ) {
+		global $wp_filter;
 
-		$value = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
-				FSD_OPTION_KEY
-			)
-		);
-
-		if ( $value ) {
-			$unserialized = maybe_unserialize( $value );
-			return is_array( $unserialized ) ? $unserialized : false;
+		foreach ( $filters_state as $filter_name => $filter_object ) {
+			if ( ! isset( $wp_filter[ $filter_name ] ) ) {
+				$wp_filter[ $filter_name ] = $filter_object;
+			}
 		}
-
-		return false;
 	}
 
 	/**
