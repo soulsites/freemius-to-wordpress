@@ -13,10 +13,22 @@ class FSD_Month_Filter {
 	 * @return array{0: DateTimeImmutable, 1: DateTimeImmutable, 2: string} [from, to, ym]
 	 */
 	public static function get_selected_range() {
-		$tz = wp_timezone();
 		$ym = isset( $_GET['fsd_month'] ) ? sanitize_text_field( wp_unslash( $_GET['fsd_month'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
-		if ( ! preg_match( '/^\d{4}-\d{2}$/', $ym ) ) {
+		return self::range_for_ym( $ym );
+	}
+
+	/**
+	 * Wie get_selected_range(), nimmt den Kalendermonat aber als Parameter statt
+	 * aus $_GET zu lesen – wird für den AJAX-Batch-Abruf gebraucht, wo der
+	 * Monat als POST-Wert übergeben wird.
+	 *
+	 * @return array{0: DateTimeImmutable, 1: DateTimeImmutable, 2: string} [from, to, ym]
+	 */
+	public static function range_for_ym( $ym ) {
+		$tz = wp_timezone();
+
+		if ( ! preg_match( '/^\d{4}-\d{2}$/', (string) $ym ) ) {
 			$ym = wp_date( 'Y-m' );
 		}
 

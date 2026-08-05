@@ -240,6 +240,45 @@ class FSD_Api {
 	}
 
 	/**
+	 * Lädt eine einzelne Seite von Zahlungen (Käufe/Verlängerungen/Erstattungen).
+	 * Im Gegensatz zu get_payments() wird hier genau eine Anfrage an Freemius
+	 * gestellt statt intern über alle Seiten zu laufen – gedacht für den
+	 * AJAX-Batch-Abruf, damit ein einzelner PHP-Request bei vielen Zahlungen
+	 * nicht das Skript-Zeitlimit reißt und die Admin-Seite nicht blockiert.
+	 *
+	 * @param DateTimeInterface $from Beginn (inklusive).
+	 * @param DateTimeInterface $to   Ende (exklusiv).
+	 * @param int                $page 0-basierte Seitenzahl (Seitengröße: PAGE_SIZE).
+	 *
+	 * @return array|WP_Error {payments: array, has_more: bool} oder WP_Error.
+	 */
+	public function get_payments_page( DateTimeInterface $from, DateTimeInterface $to, $page ) {
+		$path   = $this->product_path( 'payments.json' );
+		$offset = max( 0, (int) $page ) * self::PAGE_SIZE;
+
+		$query = array(
+			'from'     => $from->format( 'Y-m-d H:i:s' ),
+			'to'       => $to->format( 'Y-m-d H:i:s' ),
+			'extended' => 'true',
+			'count'    => self::PAGE_SIZE,
+			'offset'   => $offset,
+		);
+
+		$result = $this->request( $path, 'GET', $query );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$chunk = ( isset( $result->payments ) && is_array( $result->payments ) ) ? $result->payments : array();
+
+		return array(
+			'payments'  => $chunk,
+			'has_more'  => count( $chunk ) >= self::PAGE_SIZE,
+		);
+	}
+
+	/**
 	 * Lädt einen einzelnen Nutzer (für Käufe, bei denen die Payments-Antwort trotz
 	 * extended=true kein eingebettetes user-Objekt enthält).
 	 *

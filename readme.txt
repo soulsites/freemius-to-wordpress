@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.6.2
+Stable tag: 1.6.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -60,6 +60,12 @@ Freemius sendet den Webhook bei jedem neuen Kauf, mit HMAC-SHA256 signiert (Head
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.6.5 =
+* Performance-Fix: Die Käufe-Tabelle und der 30-Tage-Chart im Dashboard werden nicht mehr synchron beim Seitenaufruf geladen, sondern seitenweise per AJAX nachgeladen. Bei vielen hundert Käufen konnte das Laden aller Zahlungen über die Freemius-API zuvor so lange dauern, dass die Admin-Seite hing oder das PHP-Skript-Zeitlimit riss, bevor die Seite überhaupt angezeigt wurde.
+
+= 1.6.4 =
+* Fix: Der Versuch, Sprachplugin-Filter (z. B. Polylang) für die Einstellungen kurzzeitig zu entfernen und danach wiederherzustellen, war fehlerhaft (Objekt-Referenz statt Kopie) und konnte den Filter dauerhaft unbrauchbar machen. Führte zu nicht korrekt geladenen Einstellungen, fehlerhaften Unterseiten und einem leeren Dashboard trotz korrekt hinterlegter Zugangsdaten; auch der Verbindungstest war betroffen. Einstellungen werden jetzt direkt aus der Datenbank gelesen, ohne Options-Filter zu berühren.
 
 = 1.6.2 =
 * Fix: Affiliate-Anlage schlug mit „Invalid request path“ fehl. Unter dem Developer-Scope heißt die Produkt-Ebene „plugins“ statt „products“ (`/v1/developers/{id}/plugins/{id}/aff/…`), entsprechend der offiziellen Freemius-SDK-Referenz.

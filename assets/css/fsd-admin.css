@@ -143,6 +143,13 @@
 	color: var(--fsd-on-surface);
 }
 
+/* Lade-Status (Dashboard: Käufe/Chart werden per AJAX nachgeladen) */
+.fsd-loading {
+	color: var(--fsd-on-surface-variant);
+	font-size: 13px;
+	margin: 12px 0 0;
+}
+
 /* Chart */
 .fsd-chart {
 	position: relative;
