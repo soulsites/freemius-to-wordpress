@@ -86,24 +86,30 @@ class FSD_Email_Settings {
 	}
 
 	public static function get_settings() {
-		// Wie in FSD_Settings: auch hier kann Polylang Probleme verursachen.
-		// Versuche direkten Datenbankzugriff, wenn get_option() keine Einstellungen zurückgibt.
+		// Polylang kann WordPress-Optionen sprachabhängig machen.
+		// Diese Einstellungen sollten aber unabhängig von der Sprache abrufbar sein.
+		// Deaktiviere Polylang-Filter temporär.
 
-		$settings = get_option( FSD_EMAIL_OPTION_KEY );
-
-		// Falls leer, versuche direkt aus der Datenbank (umgeht Polylang-Filter).
-		if ( empty( $settings ) ) {
-			global $wpdb;
-			$value = $wpdb->get_var(
-				$wpdb->prepare(
-					"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
-					FSD_EMAIL_OPTION_KEY
-				)
-			);
-
-			if ( $value ) {
-				$settings = maybe_unserialize( $value );
+		$polylang_filters = null;
+		if ( function_exists( 'pll_current_language' ) ) {
+			// Polylang ist installiert – deaktiviere Filter.
+			$filter_name = 'option_' . FSD_EMAIL_OPTION_KEY;
+			if ( has_filter( $filter_name ) ) {
+				global $wp_filter;
+				if ( isset( $wp_filter[ $filter_name ] ) ) {
+					$polylang_filters = $wp_filter[ $filter_name ];
+					remove_all_filters( $filter_name );
+				}
 			}
+		}
+
+		$settings = get_option( FSD_EMAIL_OPTION_KEY, self::defaults() );
+
+		// Stelle Filter wieder her.
+		if ( null !== $polylang_filters ) {
+			global $wp_filter;
+			$filter_name = 'option_' . FSD_EMAIL_OPTION_KEY;
+			$wp_filter[ $filter_name ] = $polylang_filters;
 		}
 
 		$settings = is_array( $settings ) ? $settings : array();
