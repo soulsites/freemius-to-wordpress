@@ -151,23 +151,23 @@ class FSD_Settings {
 	}
 
 	public static function get_settings() {
-		// Polylang kann WordPress-Optionen sprachabhängig machen.
-		// Diese Einstellungen sollten aber unabhängig von der Sprache abrufbar sein.
-		// Nutze einen Filter, um Polylang zu deaktivieren, bevor wir die Option laden.
+		// Polylang (und ähnliche Sprachplugins) können WordPress-Optionen über den
+		// Filter "option_{name}" sprachabhängig machen. Diese Einstellungen sollen
+		// aber immer dieselben sein, unabhängig davon, welche Sprache gerade aktiv
+		// ist. Ein früherer Ansatz versuchte dafür, den Filter kurzzeitig aus dem
+		// globalen $wp_filter zu entfernen und danach wiederherzustellen – das war
+		// aber fehlerhaft: $wp_filter[...] ist ein Objekt, PHP kopiert es beim
+		// Zwischenspeichern nur als Referenz, wodurch remove_all_filters() auch die
+		// "gesicherte" Kopie leerte und der Filter danach dauerhaft kaputt war
+		// (u. a. Ursache für nicht mehr geladene Einstellungen / leere Subpages).
+		//
+		// Stattdessen lesen wir die Option direkt aus der Datenbank – das umgeht
+		// grundsätzlich jeden Filter (nicht nur Polylang) und verändert dabei
+		// keinen globalen Zustand.
+		$settings = self::get_unfiltered_option( FSD_OPTION_KEY );
 
-		// Speichere den Zustand der Polylang-Filter.
-		$polylang_filters = null;
-		if ( function_exists( 'pll_current_language' ) ) {
-			// Polylang ist installiert – merke die aktuellen Filter.
-			$polylang_filters = self::disable_polylang_filters();
-		}
-
-		// Lade die Einstellungen normal (ohne Polylang-Filterung).
-		$settings = get_option( FSD_OPTION_KEY, self::defaults() );
-
-		// Stelle die Filter wieder her.
-		if ( null !== $polylang_filters ) {
-			self::restore_polylang_filters( $polylang_filters );
+		if ( null === $settings ) {
+			$settings = self::defaults();
 		}
 
 		$settings = is_array( $settings ) ? $settings : array();
@@ -177,41 +177,24 @@ class FSD_Settings {
 	}
 
 	/**
-	 * Deaktiviert Polylang-Filter temporär und speichert ihren Zustand.
+	 * Liest eine Option direkt aus der wp_options-Tabelle, ohne die
+	 * "option_{name}"-Filter zu durchlaufen (z. B. von Sprachplugins wie
+	 * Polylang oder WPML gesetzt).
 	 *
-	 * @return array Der gespeicherte Filter-Zustand
+	 * @param string $name Optionsname.
+	 *
+	 * @return mixed|null Der entserialisierte Wert oder null, falls nicht vorhanden.
 	 */
-	private static function disable_polylang_filters() {
-		$filters_state = array();
+	public static function get_unfiltered_option( $name ) {
+		global $wpdb;
 
-		// Entferne den Polylang-Filter für diese Option.
-		$filter_name = 'option_' . FSD_OPTION_KEY;
-		if ( has_filter( $filter_name ) ) {
-			global $wp_filter;
-			if ( isset( $wp_filter[ $filter_name ] ) ) {
-				// Speichere den aktuellen Zustand.
-				$filters_state[ $filter_name ] = $wp_filter[ $filter_name ];
-				// Entferne alle Filter für diese Option.
-				remove_all_filters( $filter_name );
-			}
+		$raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $name ) );
+
+		if ( null === $raw ) {
+			return null;
 		}
 
-		return $filters_state;
-	}
-
-	/**
-	 * Stellt die Polylang-Filter wieder her.
-	 *
-	 * @param array $filters_state Der gespeicherte Filter-Zustand
-	 */
-	private static function restore_polylang_filters( $filters_state ) {
-		global $wp_filter;
-
-		foreach ( $filters_state as $filter_name => $filter_object ) {
-			if ( ! isset( $wp_filter[ $filter_name ] ) ) {
-				$wp_filter[ $filter_name ] = $filter_object;
-			}
-		}
+		return maybe_unserialize( $raw );
 	}
 
 	/**
