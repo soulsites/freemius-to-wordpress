@@ -60,8 +60,52 @@ class FSD_Webhook {
 		$email_settings = FSD_Email_Settings::get_settings();
 
 		if ( empty( $email_settings['enabled'] ) || empty( $email_settings['recipients'] ) ) {
-			return;
+			return false;
 		}
+
+		return $this->send_purchase_notification( $event, $email_settings );
+	}
+
+	/**
+	 * Verschickt eine Beispiel-Kaufmail an die gespeicherten Empfänger.
+	 *
+	 * Der Test ist unabhängig vom Aktivierungs-Schalter und vom Freemius-Webhook,
+	 * verwendet aber denselben Absender und dasselbe Template wie echte Kaufmails.
+	 *
+	 * @return bool True, wenn alle Testmails von wp_mail() angenommen wurden.
+	 */
+	public function send_test_email() {
+		$email_settings = FSD_Email_Settings::get_settings();
+
+		if ( empty( $email_settings['recipients'] ) ) {
+			return false;
+		}
+
+		$event = (object) array(
+			'objects' => (object) array(
+				'payment' => (object) array(
+					'id'       => 'TEST-' . gmdate( 'Ymd-His' ),
+					'gross'    => 49.00,
+					'currency' => 'EUR',
+				),
+				'user'    => (object) array(
+					'first' => 'Max',
+					'last'  => 'Mustermann',
+					'email' => 'max.mustermann@example.com',
+				),
+				'plan'    => (object) array(
+					'title' => __( 'Beispiel-Premiumplan', 'freemius-dashboard' ),
+				),
+				'product' => (object) array(
+					'title' => __( 'Testprodukt', 'freemius-dashboard' ),
+				),
+			),
+		);
+
+		return $this->send_purchase_notification( $event, $email_settings, true );
+	}
+
+	private function send_purchase_notification( $event, $email_settings, $is_test = false ) {
 
 		$objects = isset( $event->objects ) ? $event->objects : new stdClass();
 		$payment = isset( $objects->payment ) ? $objects->payment : new stdClass();
@@ -82,7 +126,7 @@ class FSD_Webhook {
 		$currency = isset( $payment->currency ) ? strtoupper( $payment->currency ) : '';
 
 		if ( ! empty( $email_settings['disable_zero_amount'] ) && 0.0 === $gross ) {
-			return;
+			return false;
 		}
 
 		$customer_name  = '';
@@ -98,6 +142,9 @@ class FSD_Webhook {
 
 		/* translators: %s: Produktname */
 		$subject = sprintf( __( '🎉 Neuer Kauf: %s', 'freemius-dashboard' ), $product_title );
+		if ( $is_test ) {
+			$subject = sprintf( __( '[Testmail] %s', 'freemius-dashboard' ), $subject );
+		}
 
 		$body = $this->render_html_body(
 			array(
@@ -119,9 +166,14 @@ class FSD_Webhook {
 			sprintf( 'From: %s <%s>', $sender_name, $sender_email ),
 		);
 
+		$sent = true;
 		foreach ( $email_settings['recipients'] as $recipient ) {
-			wp_mail( $recipient, $subject, $body, $headers );
+			if ( ! wp_mail( $recipient, $subject, $body, $headers ) ) {
+				$sent = false;
+			}
 		}
+
+		return $sent;
 	}
 
 	private function render_html_body( $data ) {

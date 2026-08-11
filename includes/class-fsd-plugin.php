@@ -50,6 +50,7 @@ class FSD_Plugin {
 		add_action( 'rest_api_init', array( $this->webhook, 'register_routes' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_fsd_test_connection', array( $this, 'ajax_test_connection' ) );
+		add_action( 'admin_post_fsd_send_test_email', array( $this, 'send_test_email' ) );
 	}
 
 	public function register_menu() {
@@ -149,6 +150,16 @@ class FSD_Plugin {
 		?>
 		<div class="wrap fsd-wrap">
 			<h1 class="fsd-title"><?php esc_html_e( 'Freemius – E-Mails', 'freemius-dashboard' ); ?></h1>
+			<?php if ( isset( $_GET['fsd_test_mail'] ) ) : ?>
+				<?php $test_mail_status = sanitize_key( wp_unslash( $_GET['fsd_test_mail'] ) ); ?>
+				<?php if ( 'success' === $test_mail_status ) : ?>
+					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Die Testmail wurde an alle gespeicherten Empfänger übergeben.', 'freemius-dashboard' ); ?></p></div>
+				<?php elseif ( 'missing_recipients' === $test_mail_status ) : ?>
+					<div class="notice notice-error is-dismissible"><p><?php esc_html_e( 'Bitte speichere zuerst mindestens eine gültige Empfängeradresse.', 'freemius-dashboard' ); ?></p></div>
+				<?php else : ?>
+					<div class="notice notice-error is-dismissible"><p><?php esc_html_e( 'Die Testmail konnte nicht versendet werden. Bitte prüfe die WordPress- bzw. SMTP-Mailkonfiguration.', 'freemius-dashboard' ); ?></p></div>
+				<?php endif; ?>
+			<?php endif; ?>
 			<div class="fsd-card">
 				<form method="post" action="options.php">
 					<?php
@@ -157,9 +168,45 @@ class FSD_Plugin {
 					submit_button( __( 'Speichern', 'freemius-dashboard' ), 'fsd-btn fsd-btn--filled' );
 					?>
 				</form>
+				<hr />
+				<h2><?php esc_html_e( 'Mailversand testen', 'freemius-dashboard' ); ?></h2>
+				<p><?php esc_html_e( 'Erzeugt eine Beispiel-Kaufmail und verschickt sie an alle oben gespeicherten Empfänger.', 'freemius-dashboard' ); ?></p>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="fsd_send_test_email" />
+					<?php wp_nonce_field( 'fsd_send_test_email' ); ?>
+					<?php submit_button( __( 'Testmail senden', 'freemius-dashboard' ), 'fsd-btn fsd-btn--tonal', 'submit', false ); ?>
+				</form>
 			</div>
 		</div>
 		<?php
+	}
+
+	public function send_test_email() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Keine Berechtigung.', 'freemius-dashboard' ) );
+		}
+
+		check_admin_referer( 'fsd_send_test_email' );
+
+		$email_settings = FSD_Email_Settings::get_settings();
+		$status         = 'error';
+
+		if ( empty( $email_settings['recipients'] ) ) {
+			$status = 'missing_recipients';
+		} elseif ( $this->webhook->send_test_email() ) {
+			$status = 'success';
+		}
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'          => FSD_Email_Settings::PAGE_SLUG,
+					'fsd_test_mail' => $status,
+				),
+				admin_url( 'admin.php' )
+			)
+		);
+		exit;
 	}
 
 	public function enqueue_assets( $hook ) {
