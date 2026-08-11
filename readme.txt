@@ -18,6 +18,7 @@ Dieses Plugin verbindet deine WordPress-Website mit deinem Freemius-Verkäuferko
 * Die Summe der Netto-Einnahmen des ausgewählten Monats (je Währung).
 * Ein Diagramm der Käufe der letzten 30 Tage.
 * Automatische E-Mail-Benachrichtigungen bei jedem neuen Kauf über einen Freemius-Webhook.
+* ActiveCampaign-Synchronisierung für Käufer, Lizenzen, Abo/Lifetime und Marketing-Einwilligung.
 * Eine Affiliate-Partner-Übersicht mit Provisionssätzen und im Monat verdienter Provision.
 * Shortcode `[fsd_affiliate_signup]` für ein öffentliches Anmeldeformular für neue Affiliate-Partner.
 
