@@ -29,8 +29,6 @@ class FSD_Webhook {
 				'permission_callback' => '__return_true',
 			)
 		);
-
-		add_action( self::CRON_HOOK, array( $this, 'notify_purchase' ) );
 	}
 
 	public function handle( WP_REST_Request $request ) {

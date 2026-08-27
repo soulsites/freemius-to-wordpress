@@ -52,6 +52,9 @@ class FSD_Plugin {
 		add_action( 'admin_init', array( $this->activecampaign, 'register' ) );
 		add_action( 'init', array( $this->affiliate_signup, 'register' ) );
 		add_action( 'rest_api_init', array( $this->webhook, 'register_routes' ) );
+		// Cron requests do not run rest_api_init. Register the callback during
+		// every plugin bootstrap so scheduled purchase notifications are handled.
+		add_action( FSD_Webhook::CRON_HOOK, array( $this->webhook, 'notify_purchase' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_fsd_test_connection', array( $this, 'ajax_test_connection' ) );
 		add_action( 'admin_post_fsd_send_test_email', array( $this, 'send_test_email' ) );

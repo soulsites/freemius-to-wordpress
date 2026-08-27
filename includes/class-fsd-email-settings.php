@@ -226,6 +226,7 @@ class FSD_Email_Settings {
 		/>
 		<p class="description">
 			<?php esc_html_e( 'Diese URL in Freemius unter Produkt-Einstellungen → „Events & Webhooks" als Endpoint eintragen und mindestens das Event „payment.created" aktivieren.', 'freemius-dashboard' ); ?>
+			<?php esc_html_e( ' Der Endpoint akzeptiert nur POST-Anfragen; ein direkter Aufruf im Browser verwendet GET und zeigt deshalb erwartungsgemäß „keine Route gefunden“.', 'freemius-dashboard' ); ?>
 		</p>
 		<?php
 	}

@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.6.2
+Stable tag: 1.7.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,6 +54,8 @@ Der Secret Key wird in der WordPress-Datenbank (Options-Tabelle) gespeichert. Be
 
 Freemius sendet den Webhook bei jedem neuen Kauf, mit HMAC-SHA256 signiert (Header `X-Signature`) über den Secret Key. Die Website prüft die Signatur, bevor sie E-Mails verschickt.
 
+Der Endpoint akzeptiert ausschließlich POST-Anfragen. Ein direkter Aufruf der Webhook-URL im Browser verwendet GET und liefert deshalb erwartungsgemäß die Meldung „keine Route gefunden“.
+
 = Wie richte ich das Affiliate-Anmeldeformular ein? =
 
 1. Unter „Freemius → Einstellungen“ müssen die API-Zugangsdaten sowie die Affiliate-Programm-ID hinterlegt sein.
@@ -61,6 +63,10 @@ Freemius sendet den Webhook bei jedem neuen Kauf, mit HMAC-SHA256 signiert (Head
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.7.1 =
+* Fix: Der Handler für asynchron geplante Kauf-Benachrichtigungen wird jetzt bei jedem Plugin-Start registriert. Zuvor wurde er nur während REST-Anfragen registriert und war beim späteren WP-Cron-Aufruf nicht verfügbar, sodass keine E-Mail versendet wurde.
+* Dokumentation: Hinweis ergänzt, dass die Webhook-URL nur POST akzeptiert und ein direkter Browseraufruf per GET daher erwartungsgemäß keine Route findet.
 
 = 1.6.2 =
 * Fix: Affiliate-Anlage schlug mit „Invalid request path“ fehl. Unter dem Developer-Scope heißt die Produkt-Ebene „plugins“ statt „products“ (`/v1/developers/{id}/plugins/{id}/aff/…`), entsprechend der offiziellen Freemius-SDK-Referenz.
