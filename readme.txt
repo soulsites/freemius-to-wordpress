@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.7.1
+Stable tag: 1.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -18,7 +18,7 @@ Dieses Plugin verbindet deine WordPress-Website mit deinem Freemius-Verkäuferko
 * Die Summe der Netto-Einnahmen des ausgewählten Monats (je Währung).
 * Ein Diagramm der Käufe der letzten 30 Tage.
 * Automatische E-Mail-Benachrichtigungen bei jedem neuen Kauf über einen Freemius-Webhook.
-* ActiveCampaign-Synchronisierung für Käufer, Lizenzen, Abo/Lifetime und Marketing-Einwilligung.
+* Brevo-Synchronisierung: Käufer werden nach jedem Kauf per API in Brevo eingetragen (inkl. Marketing-Einwilligung `MARKETING_MAILS`), mit Protokoll und Brevo-Status-Spalte im Dashboard.
 * Eine Affiliate-Partner-Übersicht mit Provisionssätzen und im Monat verdienter Provision.
 * Shortcode `[fsd_affiliate_signup]` für ein öffentliches Anmeldeformular für neue Affiliate-Partner.
 
@@ -63,6 +63,11 @@ Der Endpoint akzeptiert ausschließlich POST-Anfragen. Ein direkter Aufruf der W
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.8.0 =
+* Änderung: ActiveCampaign-Integration durch Brevo (API v3) ersetzt. Unter „Freemius → Brevo“ API-Key, Listen-IDs und die zu befüllenden Attribute (u. a. `MARKETING_MAILS`, `FREEMIUS_ID`, `UMSATZ_GESAMT`, `ANZAHL_KAEUFE`, `KUNDENSTATUS`) festlegen.
+* Neu: Jeder Kauf (`payment.created`) trägt den Käufer per Webhook in Brevo ein bzw. aktualisiert ihn. Ergebnis jeder Übertragung wird protokolliert.
+* Neu: Dashboard-Spalte „Brevo“ zeigt, ob der Käufer in Brevo vorhanden ist (Tooltip mit Protokolleintrag).
 
 = 1.7.1 =
 * Fix: Der Handler für asynchron geplante Kauf-Benachrichtigungen wird jetzt bei jedem Plugin-Start registriert. Zuvor wurde er nur während REST-Anfragen registriert und war beim späteren WP-Cron-Aufruf nicht verfügbar, sodass keine E-Mail versendet wurde.

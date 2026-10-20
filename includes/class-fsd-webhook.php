@@ -17,7 +17,7 @@ class FSD_Webhook {
 
 	const NAMESPACE = 'fsd/v1';
 	const CRON_HOOK = 'fsd_send_purchase_notification';
-	const AC_CRON_HOOK = 'fsd_sync_activecampaign_event';
+	const BREVO_CRON_HOOK = 'fsd_sync_brevo_event';
 
 	public function register_routes() {
 		register_rest_route(
@@ -53,7 +53,8 @@ class FSD_Webhook {
 		}
 
 		if ( is_object( $event ) && ! empty( $event->type ) && in_array( $event->type, array( 'payment.created', 'user.marketing.opted_in', 'user.marketing.opted_out', 'user.marketing.reset' ), true ) ) {
-			wp_schedule_single_event( time(), self::AC_CRON_HOOK, array( $event ) );
+			// Brevo-Synchronisierung ebenfalls asynchron (siehe FSD_Brevo::handle_event()).
+			wp_schedule_single_event( time(), self::BREVO_CRON_HOOK, array( $event ) );
 		}
 
 		return new WP_REST_Response( null, 200 );

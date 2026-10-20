@@ -19,8 +19,8 @@ class FSD_Plugin {
 
 	/** @var FSD_Webhook */
 	private $webhook;
-	/** @var FSD_ActiveCampaign */
-	private $activecampaign;
+	/** @var FSD_Brevo */
+	private $brevo;
 
 	/** @var FSD_Dashboard */
 	private $dashboard;
@@ -43,13 +43,13 @@ class FSD_Plugin {
 		$this->settings         = new FSD_Settings();
 		$this->email_settings   = new FSD_Email_Settings();
 		$this->webhook          = new FSD_Webhook();
-		$this->activecampaign   = new FSD_ActiveCampaign();
+		$this->brevo            = new FSD_Brevo();
 		$this->affiliate_signup = new FSD_Affiliate_Signup();
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this->settings, 'register' ) );
 		add_action( 'admin_init', array( $this->email_settings, 'register' ) );
-		add_action( 'admin_init', array( $this->activecampaign, 'register' ) );
+		add_action( 'admin_init', array( $this->brevo, 'register' ) );
 		add_action( 'init', array( $this->affiliate_signup, 'register' ) );
 		add_action( 'rest_api_init', array( $this->webhook, 'register_routes' ) );
 		// Cron requests do not run rest_api_init. Register the callback during
@@ -58,10 +58,11 @@ class FSD_Plugin {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_fsd_test_connection', array( $this, 'ajax_test_connection' ) );
 		add_action( 'admin_post_fsd_send_test_email', array( $this, 'send_test_email' ) );
-		add_action( FSD_Webhook::AC_CRON_HOOK, array( $this->activecampaign, 'handle_event' ) );
-		add_action( 'admin_post_fsd_ac_reconcile', array( $this->activecampaign, 'reconcile' ) );
-		add_action( 'admin_post_fsd_ac_transfer_missing', array( $this->activecampaign, 'transfer_missing' ) );
-		add_action( 'admin_post_fsd_ac_test_connection', array( $this->activecampaign, 'test_connection' ) );
+		add_action( FSD_Webhook::BREVO_CRON_HOOK, array( $this->brevo, 'handle_event' ) );
+		add_action( 'admin_post_fsd_brevo_reconcile', array( $this->brevo, 'reconcile' ) );
+		add_action( 'admin_post_fsd_brevo_transfer_missing', array( $this->brevo, 'transfer_missing' ) );
+		add_action( 'admin_post_fsd_brevo_test_connection', array( $this->brevo, 'test_connection' ) );
+		add_action( 'admin_post_fsd_brevo_clear_log', array( $this->brevo, 'clear_log' ) );
 	}
 
 	public function register_menu() {
@@ -115,17 +116,17 @@ class FSD_Plugin {
 
 		add_submenu_page(
 			FSD_Dashboard::PAGE_SLUG,
-			__( 'ActiveCampaign', 'freemius-dashboard' ),
-			__( 'ActiveCampaign', 'freemius-dashboard' ),
+			__( 'Brevo', 'freemius-dashboard' ),
+			__( 'Brevo', 'freemius-dashboard' ),
 			$capability,
-			FSD_ActiveCampaign::PAGE_SLUG,
-			array( $this->activecampaign, 'render' )
+			FSD_Brevo::PAGE_SLUG,
+			array( $this->brevo, 'render' )
 		);
 	}
 
 	public function render_dashboard() {
 		if ( null === $this->dashboard ) {
-			$this->dashboard = new FSD_Dashboard();
+			$this->dashboard = new FSD_Dashboard( $this->brevo );
 		}
 		$this->dashboard->render();
 	}
@@ -234,9 +235,9 @@ class FSD_Plugin {
 		$settings_hook   = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Settings::PAGE_SLUG;
 		$affiliates_hook = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Affiliates::PAGE_SLUG;
 		$emails_hook     = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Email_Settings::PAGE_SLUG;
-		$activecampaign_hook = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_ActiveCampaign::PAGE_SLUG;
+		$brevo_hook      = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Brevo::PAGE_SLUG;
 
-		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $affiliates_hook, $emails_hook, $activecampaign_hook ), true ) ) {
+		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $affiliates_hook, $emails_hook, $brevo_hook ), true ) ) {
 			return;
 		}
 

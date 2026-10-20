@@ -10,3 +10,5 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 delete_option( 'fsd_settings' );
 delete_option( 'fsd_email_settings' );
 delete_option( 'fsd_activecampaign_settings' );
+delete_option( 'fsd_brevo_settings' );
+delete_option( 'fsd_brevo_log' );
