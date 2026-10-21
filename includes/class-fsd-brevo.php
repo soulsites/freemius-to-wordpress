@@ -205,14 +205,14 @@ class FSD_Brevo {
 	}
 
 	/** YES/NO aus Freemius "is_marketing_allowed"; unbekannt => bei neuen Kontakten NO, sonst unverändert. */
-	private static function consent_value( $user, $is_new ) {
+	public static function consent_value( $user, $is_new ) {
 		if ( isset( $user->is_marketing_allowed ) && null !== $user->is_marketing_allowed ) {
 			return $user->is_marketing_allowed ? 'YES' : 'NO';
 		}
 		return $is_new ? 'NO' : '';
 	}
 
-	private static function date_of( $payment ) {
+	public static function date_of( $payment ) {
 		if ( empty( $payment->created ) ) {
 			return gmdate( 'Y-m-d' );
 		}
@@ -226,7 +226,7 @@ class FSD_Brevo {
 		return trim( $product . ( '' !== $product && '' !== $plan ? ' – ' : '' ) . $plan );
 	}
 
-	private static function billing_cycle( $payment, $objects ) {
+	public static function billing_cycle( $payment, $objects ) {
 		if ( empty( $payment->subscription_id ) ) {
 			return 'Lifetime';
 		}
@@ -412,7 +412,10 @@ class FSD_Brevo {
 
 			<hr /><h2>Käufer abgleichen</h2>
 			<p>Vergleicht alle über die Freemius-Zahlungen auffindbaren Käufer mit Brevo. Fehlende Kontakte können anschließend mit allen Kaufdaten übertragen werden.</p>
-			<?php $this->render_action_form( 'fsd_brevo_reconcile', 'Abgleich starten' ); ?>
+			<p>
+				<button type="button" class="fsd-btn fsd-btn--tonal" id="fsd-brevo-reconcile">Abgleich starten</button>
+				<span class="fsd-test-result" id="fsd-brevo-progress"></span>
+			</p>
 			<?php $this->render_missing(); ?>
 		</div>
 		<div class="fsd-card"><?php $this->render_log(); ?></div>
@@ -434,15 +437,15 @@ class FSD_Brevo {
 	}
 
 	private function render_missing() {
-		$missing = get_transient( 'fsd_brevo_missing_' . get_current_user_id() );
-		if ( false === $missing ) {
+		$missing = FSD_Brevo_Reconcile::get_missing();
+		if ( ! is_array( $missing ) ) {
 			return;
 		}
 		echo '<h3>Fehlende Kontakte (' . esc_html( count( $missing ) ) . ')</h3>';
 		if ( ! $missing ) {
 			return;
 		}
-		$this->render_action_form( 'fsd_brevo_transfer_missing', 'Alle übertragen', array( 'index' => 'all' ) );
+		echo '<p><button type="button" class="fsd-btn fsd-btn--tonal" id="fsd-brevo-transfer-all">Alle übertragen</button></p>';
 		echo '<table class="fsd-table"><thead><tr><th>E-Mail</th><th>Käufe</th><th>Umsatz</th><th>Marketing</th><th></th></tr></thead><tbody>';
 		foreach ( $missing as $index => $buyer ) {
 			echo '<tr><td><code>' . esc_html( $buyer['email'] ) . '</code></td>';
@@ -510,123 +513,47 @@ class FSD_Brevo {
 		$this->redirect( 'done', 'Protokoll geleert.' );
 	}
 
-	public function reconcile() {
-		$this->authorize( 'fsd_brevo_reconcile' );
-		@set_time_limit( 300 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-
-		$fs       = FSD_Settings::get_settings();
-		$freemius = new FSD_Api( $fs['product_id'], $fs['public_key'], $fs['secret_key'], $fs['product_id'] );
-		$payments = $freemius->get_payments( new DateTimeImmutable( '2010-01-01' ), new DateTimeImmutable( 'tomorrow' ) );
-		if ( is_wp_error( $payments ) ) {
-			$this->redirect( 'error', $payments->get_error_message() );
+	/**
+	 * Prüft live (ohne Cache), ob ein Kontakt in Brevo existiert, und aktualisiert den Dashboard-Cache.
+	 *
+	 * @return bool|WP_Error
+	 */
+	public function check_presence( $email ) {
+		$found = $this->api()->get_contact( $email, 10 );
+		if ( is_wp_error( $found ) ) {
+			return $found;
 		}
-
-		$buyers = $this->aggregate_buyers( $payments, $freemius );
-		$missing = array();
-		foreach ( $buyers as $buyer ) {
-			$found = $this->api()->get_contact( $buyer['email'] );
-			if ( is_wp_error( $found ) ) {
-				$this->redirect( 'error', $found->get_error_message() );
-			}
-			set_transient( self::PRESENCE_PREFIX . md5( $buyer['email'] ), $found ? self::PRESENCE_YES : self::PRESENCE_NO, HOUR_IN_SECONDS );
-			if ( ! $found ) {
-				$missing[] = $buyer;
-			}
-		}
-		set_transient( 'fsd_brevo_missing_' . get_current_user_id(), $missing, HOUR_IN_SECONDS );
-		$this->redirect( 'done', sprintf( '%d Käufer geprüft, %d fehlen in Brevo.', count( $buyers ), count( $missing ) ) );
+		set_transient( self::PRESENCE_PREFIX . md5( $email ), $found ? self::PRESENCE_YES : self::PRESENCE_NO, HOUR_IN_SECONDS );
+		return (bool) $found;
 	}
 
 	/**
-	 * Fasst alle (Nicht-Sandbox-)Zahlungen je Käufer zu absoluten Attributwerten zusammen.
+	 * Überträgt einen Käufer aus dem Abgleich (absolute Werte) und protokolliert das Ergebnis.
+	 *
+	 * @return array|WP_Error
 	 */
-	private function aggregate_buyers( $payments, FSD_Api $freemius ) {
-		usort(
-			$payments,
-			static function ( $a, $b ) {
-				return strcmp( (string) ( $a->created ?? '' ), (string) ( $b->created ?? '' ) );
-			}
-		);
-
-		$buyers = array();
-		foreach ( $payments as $payment ) {
-			if ( isset( $payment->environment ) && 1 === (int) $payment->environment ) {
-				continue;
-			}
-			$user = isset( $payment->user ) ? $payment->user : ( ! empty( $payment->user_id ) ? $freemius->get_user( $payment->user_id ) : null );
-			if ( is_wp_error( $user ) || ! $user || empty( $user->email ) ) {
-				continue;
-			}
-			$email     = strtolower( (string) $user->email );
-			$gross     = isset( $payment->gross ) ? (float) $payment->gross : 0.0;
-			$is_refund = ( isset( $payment->type ) && 'refund' === $payment->type ) || $gross < 0;
-			$date      = self::date_of( $payment );
-			$prev      = $buyers[ $email ]['values'] ?? array(
-				'ANZAHL_KAEUFE'     => 0,
-				'UMSATZ_GESAMT'     => 0.0,
-				'ERSTKAUF_DATUM'    => '',
-				'ERSTATTUNG'        => 'NO',
-				'GUTSCHEIN_GENUTZT' => 'NO',
-			);
-			$total     = round( $prev['UMSATZ_GESAMT'] + $gross, 2 );
-
-			$buyers[ $email ] = array(
-				'email'  => $email,
-				'values' => array(
-					'FIRSTNAME'          => isset( $user->first ) ? (string) $user->first : '',
-					'LASTNAME'           => isset( $user->last ) ? (string) $user->last : '',
-					'FREEMIUS_ID'        => isset( $user->id ) ? (string) $user->id : (string) ( $payment->user_id ?? '' ),
-					'FREEMIUS_UMSATZ'    => $total,
-					'UMSATZ_GESAMT'      => $total,
-					'ANZAHL_KAEUFE'      => $prev['ANZAHL_KAEUFE'] + ( $is_refund ? 0 : 1 ),
-					'LETZTER_KAUF_DATUM' => $is_refund ? ( $buyers[ $email ]['values']['LETZTER_KAUF_DATUM'] ?? '' ) : $date,
-					'ERSTKAUF_DATUM'     => '' !== $prev['ERSTKAUF_DATUM'] || $is_refund ? $prev['ERSTKAUF_DATUM'] : $date,
-					'LETZTES_PRODUKT'    => isset( $payment->plan->title ) ? (string) $payment->plan->title : ( $buyers[ $email ]['values']['LETZTES_PRODUKT'] ?? '' ),
-					'BILLINGCYCLE'       => self::billing_cycle( $payment, new stdClass() ),
-					'LIZENZ'             => isset( $payment->license_id ) ? (string) $payment->license_id : '',
-					'KUNDENSTATUS'       => $total > 0 ? 'Kunde' : 'Free',
-					'BEZAHLT'            => $total > 0 ? 'YES' : 'NO',
-					'ERSTATTUNG'         => $is_refund ? 'YES' : $prev['ERSTATTUNG'],
-					'GUTSCHEIN_GENUTZT'  => ! empty( $payment->coupon_id ) ? 'YES' : $prev['GUTSCHEIN_GENUTZT'],
-					'AFFILIATE_ID'       => ! empty( $payment->affiliate_id ) ? (string) $payment->affiliate_id : '',
-					'LAND'               => isset( $payment->country_code ) ? strtoupper( (string) $payment->country_code ) : '',
-					'RESELLER'           => self::get_settings()['reseller'],
-					'MARKETING_MAILS'    => self::consent_value( $user, true ),
-				),
-			);
-		}
-		return $buyers;
+	public function transfer_buyer( $buyer ) {
+		$result = $this->push( $buyer['email'], $buyer['values'], true );
+		$this->log_result( $result, $buyer['email'], 'abgleich', 'Kontakt aus Abgleich übertragen' );
+		return $result;
 	}
 
 	public function transfer_missing() {
 		$this->authorize( 'fsd_brevo_transfer_missing' );
-		$missing = get_transient( 'fsd_brevo_missing_' . get_current_user_id() );
+		$missing = FSD_Brevo_Reconcile::get_missing();
 		$missing = is_array( $missing ) ? $missing : array();
-		$index   = isset( $_POST['index'] ) ? sanitize_key( wp_unslash( $_POST['index'] ) ) : '';
-		$indexes = 'all' === $index ? array_keys( $missing ) : array( (int) $index );
+		$index   = isset( $_POST['index'] ) ? absint( $_POST['index'] ) : -1;
 
-		$done   = 0;
-		$errors = array();
-		foreach ( $indexes as $i ) {
-			if ( ! isset( $missing[ $i ] ) ) {
-				continue;
-			}
-			$buyer  = $missing[ $i ];
-			$result = $this->push( $buyer['email'], $buyer['values'], true );
-			$this->log_result( $result, $buyer['email'], 'abgleich', 'Kontakt aus Abgleich übertragen' );
-			if ( is_wp_error( $result ) ) {
-				$errors[] = $buyer['email'] . ': ' . $result->get_error_message();
-				continue;
-			}
-			unset( $missing[ $i ] );
-			++$done;
+		if ( ! isset( $missing[ $index ] ) ) {
+			$this->redirect( 'error', 'Kontakt nicht mehr verfügbar.' );
 		}
-		set_transient( 'fsd_brevo_missing_' . get_current_user_id(), array_values( $missing ), HOUR_IN_SECONDS );
-
-		if ( $errors ) {
-			$this->redirect( 'error', sprintf( '%d übertragen, %d Fehler: %s', $done, count( $errors ), implode( ' | ', $errors ) ) );
+		$result = $this->transfer_buyer( $missing[ $index ] );
+		if ( is_wp_error( $result ) ) {
+			$this->redirect( 'error', $missing[ $index ]['email'] . ': ' . $result->get_error_message() );
 		}
-		$this->redirect( 'done', sprintf( '%d Kontakt(e) übertragen.', $done ) );
+		unset( $missing[ $index ] );
+		FSD_Brevo_Reconcile::set_missing( $missing );
+		$this->redirect( 'done', 'Kontakt übertragen.' );
 	}
 
 	private function redirect( $status, $message ) {

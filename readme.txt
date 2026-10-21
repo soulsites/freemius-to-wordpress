@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.8.0
+Stable tag: 1.8.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,9 @@ Der Endpoint akzeptiert ausschließlich POST-Anfragen. Ein direkter Aufruf der W
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.8.1 =
+* Fix: Der Brevo-Abgleich und „Alle übertragen“ liefen bei vielen Käufern in einen Gateway-Timeout. Beides läuft jetzt schrittweise über mehrere kurze AJAX-Requests mit Fortschrittsanzeige.
 
 = 1.8.0 =
 * Änderung: ActiveCampaign-Integration durch Brevo (API v3) ersetzt. Unter „Freemius → Brevo“ API-Key, Listen-IDs und die zu befüllenden Attribute (u. a. `MARKETING_MAILS`, `FREEMIUS_ID`, `UMSATZ_GESAMT`, `ANZAHL_KAEUFE`, `KUNDENSTATUS`) festlegen.
