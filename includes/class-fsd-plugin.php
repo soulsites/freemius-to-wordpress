@@ -22,6 +22,9 @@ class FSD_Plugin {
 	/** @var FSD_Brevo */
 	private $brevo;
 
+	/** @var FSD_Brevo_Reconcile */
+	private $brevo_reconcile;
+
 	/** @var FSD_Dashboard */
 	private $dashboard;
 
@@ -44,6 +47,7 @@ class FSD_Plugin {
 		$this->email_settings   = new FSD_Email_Settings();
 		$this->webhook          = new FSD_Webhook();
 		$this->brevo            = new FSD_Brevo();
+		$this->brevo_reconcile  = new FSD_Brevo_Reconcile( $this->brevo );
 		$this->affiliate_signup = new FSD_Affiliate_Signup();
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
@@ -59,7 +63,8 @@ class FSD_Plugin {
 		add_action( 'wp_ajax_fsd_test_connection', array( $this, 'ajax_test_connection' ) );
 		add_action( 'admin_post_fsd_send_test_email', array( $this, 'send_test_email' ) );
 		add_action( FSD_Webhook::BREVO_CRON_HOOK, array( $this->brevo, 'handle_event' ) );
-		add_action( 'admin_post_fsd_brevo_reconcile', array( $this->brevo, 'reconcile' ) );
+		add_action( 'wp_ajax_' . FSD_Brevo_Reconcile::AJAX_RECONCILE, array( $this->brevo_reconcile, 'ajax_reconcile_step' ) );
+		add_action( 'wp_ajax_' . FSD_Brevo_Reconcile::AJAX_TRANSFER, array( $this->brevo_reconcile, 'ajax_transfer_step' ) );
 		add_action( 'admin_post_fsd_brevo_transfer_missing', array( $this->brevo, 'transfer_missing' ) );
 		add_action( 'admin_post_fsd_brevo_test_connection', array( $this->brevo, 'test_connection' ) );
 		add_action( 'admin_post_fsd_brevo_clear_log', array( $this->brevo, 'clear_log' ) );
@@ -245,6 +250,22 @@ class FSD_Plugin {
 
 		if ( $dashboard_hook === $hook ) {
 			wp_enqueue_script( 'fsd-chart', FSD_PLUGIN_URL . 'assets/js/fsd-chart.js', array(), FSD_VERSION, true );
+		}
+
+		if ( $brevo_hook === $hook ) {
+			wp_enqueue_script( 'fsd-brevo', FSD_PLUGIN_URL . 'assets/js/fsd-brevo.js', array( 'jquery' ), FSD_VERSION, true );
+			wp_localize_script(
+				'fsd-brevo',
+				'fsdBrevo',
+				array(
+					'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+					'nonce'   => wp_create_nonce( FSD_Brevo_Reconcile::NONCE ),
+					'actions' => array(
+						'reconcile' => FSD_Brevo_Reconcile::AJAX_RECONCILE,
+						'transfer'  => FSD_Brevo_Reconcile::AJAX_TRANSFER,
+					),
+				)
+			);
 		}
 
 		if ( $settings_hook === $hook ) {

@@ -201,27 +201,15 @@ class FSD_Api {
 	 * @return array|WP_Error Liste von Payment-Objekten oder WP_Error.
 	 */
 	public function get_payments( DateTimeInterface $from, DateTimeInterface $to ) {
-		$path = $this->product_path( 'payments.json' );
-
 		$all    = array();
 		$offset = 0;
 
 		for ( $page = 0; $page < self::MAX_PAGES; $page++ ) {
-			$query = array(
-				'from'     => $from->format( 'Y-m-d H:i:s' ),
-				'to'       => $to->format( 'Y-m-d H:i:s' ),
-				'extended' => 'true',
-				'count'    => self::PAGE_SIZE,
-				'offset'   => $offset,
-			);
+			$chunk = $this->get_payments_page( $from, $to, $offset );
 
-			$result = $this->request( $path, 'GET', $query );
-
-			if ( is_wp_error( $result ) ) {
-				return $result;
+			if ( is_wp_error( $chunk ) ) {
+				return $chunk;
 			}
-
-			$chunk = ( isset( $result->payments ) && is_array( $result->payments ) ) ? $result->payments : array();
 
 			if ( empty( $chunk ) ) {
 				break;
@@ -237,6 +225,30 @@ class FSD_Api {
 		}
 
 		return $all;
+	}
+
+	/**
+	 * Lädt eine einzelne Seite (PAGE_SIZE Einträge) der Zahlungen – für
+	 * schrittweise Verarbeitung über mehrere Requests (z. B. Brevo-Abgleich).
+	 *
+	 * @return array|WP_Error
+	 */
+	public function get_payments_page( DateTimeInterface $from, DateTimeInterface $to, $offset ) {
+		$query = array(
+			'from'     => $from->format( 'Y-m-d H:i:s' ),
+			'to'       => $to->format( 'Y-m-d H:i:s' ),
+			'extended' => 'true',
+			'count'    => self::PAGE_SIZE,
+			'offset'   => (int) $offset,
+		);
+
+		$result = $this->request( $this->product_path( 'payments.json' ), 'GET', $query );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		return ( isset( $result->payments ) && is_array( $result->payments ) ) ? $result->payments : array();
 	}
 
 	/**
