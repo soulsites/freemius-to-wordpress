@@ -426,7 +426,7 @@ class FSD_Brevo {
 			<hr /><h2>Elementor-Formulare</h2>
 			<?php if ( FSD_Elementor_Integration::is_available() ) : ?>
 				<p>Im Elementor-Formular-Widget unter <b>Aktionen nach dem Absenden</b> die Aktion <b>Brevo</b> hinzufügen. Listen, Double Opt-in (DOI-Template + Weiterleitung) und Feld-Zuordnung werden im Abschnitt „Brevo“ des Widgets eingestellt. Ergebnisse erscheinen im Protokoll unten (Event <code>elementor_form</code>).</p>
-				<p class="description">Für Double Opt-in wird in Brevo ein Template vom Typ „Double Opt-in“ mit dem Link <code>{{ doubleoptin }}</code> benötigt.</p>
+				<p class="description">Für Double Opt-in verlangt die Brevo-API ein eigenes, aktives E-Mail-Template (Tag <code>optin</code>), dessen Bestätigungs-Button auf <code>{{ params.DOIurl }}</code> verlinkt. Die Standard-DOI-Mail von Brevo gilt nur für Formulare, die in Brevo selbst erstellt wurden.</p>
 			<?php else : ?>
 				<p class="description">Elementor Pro ist nicht aktiv – die Formularaktion „Brevo“ steht erst mit Elementor Pro zur Verfügung.</p>
 			<?php endif; ?>

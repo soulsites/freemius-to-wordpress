@@ -149,7 +149,7 @@ class FSD_Brevo_Api {
 
 	/**
 	 * Startet den Brevo-Double-Opt-in: Brevo verschickt die Bestätigungsmail
-	 * (Template mit {{ doubleoptin }}-Link) und legt den Kontakt erst nach
+	 * (Template mit {{ params.DOIurl }}-Link) und legt den Kontakt erst nach
 	 * Klick auf den Link in den Listen an.
 	 */
 	public function double_optin( $email, $attributes, $list_ids, $template_id, $redirect_url ) {
