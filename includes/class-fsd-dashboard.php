@@ -15,7 +15,11 @@ class FSD_Dashboard {
 	/** @var FSD_Api */
 	private $api;
 
-	public function __construct() {
+	/** @var FSD_Brevo */
+	private $brevo;
+
+	public function __construct( FSD_Brevo $brevo ) {
+		$this->brevo = $brevo;
 		$settings  = FSD_Settings::get_settings();
 		$this->api = new FSD_Api(
 			$settings['product_id'],
@@ -289,7 +293,7 @@ class FSD_Dashboard {
 			}
 		);
 
-		$columns = 17;
+		$columns = 18;
 		?>
 		<div class="fsd-table-wrap">
 			<table class="fsd-table">
@@ -298,6 +302,7 @@ class FSD_Dashboard {
 						<th><?php esc_html_e( 'Zahlungs-ID', 'freemius-dashboard' ); ?></th>
 						<th><?php esc_html_e( 'Datum', 'freemius-dashboard' ); ?></th>
 						<th><?php esc_html_e( 'Kunde', 'freemius-dashboard' ); ?></th>
+						<th><?php esc_html_e( 'Brevo', 'freemius-dashboard' ); ?></th>
 						<th><?php esc_html_e( 'Land', 'freemius-dashboard' ); ?></th>
 						<th><?php esc_html_e( 'Plan', 'freemius-dashboard' ); ?></th>
 						<th><?php esc_html_e( 'Typ', 'freemius-dashboard' ); ?></th>
@@ -344,6 +349,7 @@ class FSD_Dashboard {
 										<?php endif; ?>
 									</div>
 								</td>
+								<td><?php $this->render_brevo_status( $payment ); ?></td>
 								<td><?php echo esc_html( strtoupper( self::field( $payment, 'country_code' ) ) ); ?></td>
 								<td><?php echo esc_html( self::plan_label( $payment ) ); ?></td>
 								<td>
@@ -381,6 +387,36 @@ class FSD_Dashboard {
 			</table>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Zeigt, ob der Käufer als Kontakt in Brevo existiert, plus – falls
+	 * vorhanden – den Protokolleintrag der Synchronisierung dieser Zahlung.
+	 */
+	private function render_brevo_status( $payment ) {
+		$email    = isset( $payment->user->email ) ? (string) $payment->user->email : '';
+		$presence = $this->brevo->get_presence( $email );
+
+		$chips = array(
+			FSD_Brevo::PRESENCE_YES   => array( 'fsd-chip--active', __( 'Vorhanden', 'freemius-dashboard' ) ),
+			FSD_Brevo::PRESENCE_NO    => array( 'fsd-chip--blocked', __( 'Fehlt', 'freemius-dashboard' ) ),
+			FSD_Brevo::PRESENCE_ERROR => array( 'fsd-chip--pending', __( 'Unbekannt', 'freemius-dashboard' ) ),
+		);
+
+		if ( ! isset( $chips[ $presence ] ) ) {
+			echo '—';
+			return;
+		}
+
+		$entry = $this->brevo->get_log_entry( isset( $payment->id ) ? $payment->id : '' );
+		$title = $entry ? wp_date( 'd.m.Y H:i', $entry['time'] ) . ' – ' . $entry['message'] : __( 'Kein Protokolleintrag zu dieser Zahlung.', 'freemius-dashboard' );
+
+		printf(
+			'<span class="fsd-chip %s" title="%s">%s</span>',
+			esc_attr( $chips[ $presence ][0] ),
+			esc_attr( $title ),
+			esc_html( $chips[ $presence ][1] )
+		);
 	}
 
 	private function render_totals( $payments ) {
