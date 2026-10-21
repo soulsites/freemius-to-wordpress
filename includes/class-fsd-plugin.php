@@ -25,6 +25,9 @@ class FSD_Plugin {
 	/** @var FSD_Brevo_Reconcile */
 	private $brevo_reconcile;
 
+	/** @var FSD_Elementor_Integration */
+	private $elementor;
+
 	/** @var FSD_Dashboard */
 	private $dashboard;
 
@@ -48,6 +51,8 @@ class FSD_Plugin {
 		$this->webhook          = new FSD_Webhook();
 		$this->brevo            = new FSD_Brevo();
 		$this->brevo_reconcile  = new FSD_Brevo_Reconcile( $this->brevo );
+		$this->elementor        = new FSD_Elementor_Integration( $this->brevo );
+		$this->elementor->register();
 		$this->affiliate_signup = new FSD_Affiliate_Signup();
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );

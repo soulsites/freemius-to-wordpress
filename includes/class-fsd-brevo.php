@@ -96,15 +96,18 @@ class FSD_Brevo {
 		$selected          = isset( $input['attributes'] ) ? array_map( 'sanitize_key', (array) $input['attributes'] ) : array();
 		$out['attributes'] = array_values( array_intersect( $allowed, array_map( 'strtoupper', $selected ) ) );
 
-		delete_transient( self::ATTRIBUTES_CACHE );
+		// Gecachte Brevo-Daten (Attribute, Listen/Templates im Elementor-Editor) neu laden.
+		foreach ( array( self::ATTRIBUTES_CACHE, 'fsd_brevo_el_lists', 'fsd_brevo_el_templates' ) as $cache_key ) {
+			delete_transient( $cache_key );
+		}
 		return $out;
 	}
 
-	private static function parse_list_ids( $value ) {
+	public static function parse_list_ids( $value ) {
 		return array_values( array_filter( array_map( 'absint', preg_split( '/[\s,;]+/', (string) $value ) ) ) );
 	}
 
-	private function api() {
+	public function api() {
 		if ( null === $this->api ) {
 			$this->api = new FSD_Brevo_Api( self::get_settings()['api_key'] );
 		}
@@ -252,14 +255,30 @@ class FSD_Brevo {
 	 * @return array|WP_Error Liste übersprungener Attribute bei Erfolg.
 	 */
 	private function push( $email, $values, $add_to_lists ) {
-		$s        = self::get_settings();
-		$enabled  = array_flip( (array) $s['attributes'] );
-		$defs     = $this->attribute_definitions();
-		$payload  = array();
-		$skipped  = array();
+		$s                         = self::get_settings();
+		list( $payload, $skipped ) = $this->prepare_attributes( array_intersect_key( $values, array_flip( (array) $s['attributes'] ) ) );
+
+		$result = $this->api()->upsert_contact( $email, $payload, $add_to_lists ? self::parse_list_ids( $s['list_ids'] ) : array() );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		set_transient( self::PRESENCE_PREFIX . md5( $email ), self::PRESENCE_YES, 6 * HOUR_IN_SECONDS );
+		return $skipped;
+	}
+
+	/**
+	 * Typisiert Attributwerte anhand der Brevo-Attribut-Definitionen.
+	 * Leere Werte werden ignoriert, unpassende/unbekannte Attribute übersprungen.
+	 *
+	 * @return array array( $payload, $skipped_names )
+	 */
+	public function prepare_attributes( $values ) {
+		$defs    = $this->attribute_definitions();
+		$payload = array();
+		$skipped = array();
 
 		foreach ( $values as $name => $value ) {
-			if ( ! isset( $enabled[ $name ] ) || '' === $value || null === $value ) {
+			if ( '' === $value || null === $value ) {
 				continue;
 			}
 			$cast = $this->cast( $value, is_array( $defs ) ? ( $defs[ $name ] ?? false ) : null );
@@ -269,13 +288,7 @@ class FSD_Brevo {
 			}
 			$payload[ $name ] = $cast;
 		}
-
-		$result = $this->api()->upsert_contact( $email, $payload, $add_to_lists ? self::parse_list_ids( $s['list_ids'] ) : array() );
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-		set_transient( self::PRESENCE_PREFIX . md5( $email ), self::PRESENCE_YES, 6 * HOUR_IN_SECONDS );
-		return $skipped;
+		return array( $payload, $skipped );
 	}
 
 	/** @return array|null Attribut-Definitionen oder null, falls nicht ladbar (dann ungeprüft senden). */
@@ -326,7 +339,7 @@ class FSD_Brevo {
 		}
 	}
 
-	private function log_result( $result, $email, $event, $message, $payment_id = '' ) {
+	public function log_result( $result, $email, $event, $message, $payment_id = '' ) {
 		if ( is_wp_error( $result ) ) {
 			$this->log->add( FSD_Brevo_Log::STATUS_ERROR, $email, $event, $result->get_error_message(), $payment_id );
 			return;
@@ -409,6 +422,14 @@ class FSD_Brevo {
 			<hr /><h2>Freemius-Webhook</h2>
 			<p><input class="large-text" readonly onclick="this.select()" value="<?php echo esc_url( rest_url( FSD_Webhook::NAMESPACE . '/webhook' ) ); ?>" /></p>
 			<p class="description">In Freemius aktivieren: <code>payment.created</code>, <code>user.marketing.opted_in</code>, <code>user.marketing.opted_out</code> und <code>user.marketing.reset</code>.</p>
+
+			<hr /><h2>Elementor-Formulare</h2>
+			<?php if ( FSD_Elementor_Integration::is_available() ) : ?>
+				<p>Im Elementor-Formular-Widget unter <b>Aktionen nach dem Absenden</b> die Aktion <b>Brevo</b> hinzufügen. Listen, Double Opt-in (DOI-Template + Weiterleitung) und Feld-Zuordnung werden im Abschnitt „Brevo“ des Widgets eingestellt. Ergebnisse erscheinen im Protokoll unten (Event <code>elementor_form</code>).</p>
+				<p class="description">Für Double Opt-in wird in Brevo ein Template vom Typ „Double Opt-in“ mit dem Link <code>{{ doubleoptin }}</code> benötigt.</p>
+			<?php else : ?>
+				<p class="description">Elementor Pro ist nicht aktiv – die Formularaktion „Brevo“ steht erst mit Elementor Pro zur Verfügung.</p>
+			<?php endif; ?>
 
 			<hr /><h2>Käufer abgleichen</h2>
 			<p>Vergleicht alle über die Freemius-Zahlungen auffindbaren Käufer mit Brevo. Fehlende Kontakte können anschließend mit allen Kaufdaten übertragen werden.</p>

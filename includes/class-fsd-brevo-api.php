@@ -104,4 +104,65 @@ class FSD_Brevo_Api {
 		}
 		return $attributes;
 	}
+
+	/** @return array|WP_Error Listen-ID => Name. */
+	public function get_lists() {
+		$lists = array();
+		for ( $offset = 0; $offset < 1000; $offset += 50 ) {
+			$result = $this->request( 'GET', 'contacts/lists', null, array( 'limit' => 50, 'offset' => $offset ) );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			foreach ( (array) ( $result->lists ?? array() ) as $list ) {
+				$lists[ (int) $list->id ] = (string) $list->name;
+			}
+			if ( count( (array) ( $result->lists ?? array() ) ) < 50 ) {
+				break;
+			}
+		}
+		return $lists;
+	}
+
+	/**
+	 * Aktive E-Mail-Templates. Double-Opt-in-Templates (Tag "optin") stehen vorne.
+	 *
+	 * @return array|WP_Error Template-ID => Name.
+	 */
+	public function get_templates() {
+		$result = $this->request( 'GET', 'smtp/templates', null, array( 'templateStatus' => 'true', 'limit' => 1000 ) );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		$optin = array();
+		$other = array();
+		foreach ( (array) ( $result->templates ?? array() ) as $template ) {
+			$is_optin = false !== stripos( (string) ( $template->tag ?? '' ), 'optin' );
+			$label    = '#' . (int) $template->id . ' – ' . (string) $template->name . ( $is_optin ? ' (Double Opt-in)' : '' );
+			if ( $is_optin ) {
+				$optin[ (int) $template->id ] = $label;
+			} else {
+				$other[ (int) $template->id ] = $label;
+			}
+		}
+		return $optin + $other;
+	}
+
+	/**
+	 * Startet den Brevo-Double-Opt-in: Brevo verschickt die Bestätigungsmail
+	 * (Template mit {{ doubleoptin }}-Link) und legt den Kontakt erst nach
+	 * Klick auf den Link in den Listen an.
+	 */
+	public function double_optin( $email, $attributes, $list_ids, $template_id, $redirect_url ) {
+		$body = array(
+			'email'          => $email,
+			'includeListIds' => array_values( array_map( 'intval', $list_ids ) ),
+			'templateId'     => (int) $template_id,
+			'redirectionUrl' => $redirect_url,
+		);
+		if ( $attributes ) {
+			$body['attributes'] = (object) $attributes;
+		}
+		$result = $this->request( 'POST', 'contacts/doubleOptinConfirmation', $body );
+		return is_wp_error( $result ) ? $result : true;
+	}
 }
