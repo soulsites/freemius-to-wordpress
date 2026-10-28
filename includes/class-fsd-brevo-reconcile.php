@@ -199,6 +199,10 @@ class FSD_Brevo_Reconcile {
 		}
 
 		$buyer['is_new'] = null === $contact;
+		if ( $contact ) {
+			$lead_ids          = FSD_Brevo::parse_list_ids( FSD_Brevo::get_settings()['lead_list_ids'] );
+			$buyer['was_lead'] = (bool) array_intersect( $lead_ids, array_map( 'intval', (array) ( $contact->listIds ?? array() ) ) );
+		}
 		if ( $contact && FSD_Brevo::is_brevo_opted_out( $contact ) ) {
 			if ( 'NO' !== FSD_Brevo::consent_value( (object) array( 'is_marketing_allowed' => $buyer['is_marketing_allowed'] ), false ) ) {
 				$buyer['sync_freemius_opt_out'] = true;

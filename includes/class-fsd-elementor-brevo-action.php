@@ -76,6 +76,18 @@ class FSD_Elementor_Brevo_Action extends Action_Base {
 				: array( 'label' => 'Listen-IDs ohne Marketing', 'type' => Controls_Manager::TEXT, 'placeholder' => 'z. B. 9', 'description' => 'Kommagetrennt.' )
 		);
 
+		$lead_ids = FSD_Brevo::parse_list_ids( FSD_Brevo::get_settings()['lead_list_ids'] );
+		$widget->add_control(
+			'fsd_brevo_lead_list_notice',
+			array(
+				'type'            => Controls_Manager::RAW_HTML,
+				'raw'             => $lead_ids
+					? 'Zusätzlich als Lead in die zentral konfigurierte(n) Liste(n) <b>#' . implode( ', #', $lead_ids ) . '</b> eintragen.'
+					: 'Keine zentrale Lead-Liste konfiguriert. Diese kann unter <b>Freemius → Brevo</b> hinterlegt werden.',
+				'content_classes' => 'elementor-panel-alert elementor-panel-alert-info',
+			)
+		);
+
 		$widget->add_control(
 			'fsd_brevo_double_optin',
 			array(
@@ -201,7 +213,8 @@ class FSD_Elementor_Brevo_Action extends Action_Base {
 
 		$marketing_ids     = FSD_Brevo::parse_list_ids( implode( ',', (array) ( $settings['fsd_brevo_list_ids'] ?? array() ) ) );
 		$non_marketing_ids = FSD_Brevo::parse_list_ids( implode( ',', (array) ( $settings['fsd_brevo_non_marketing_list_ids'] ?? array() ) ) );
-		$list_ids          = $has_marketing ? $marketing_ids : $non_marketing_ids;
+		$lead_ids          = FSD_Brevo::parse_list_ids( FSD_Brevo::get_settings()['lead_list_ids'] );
+		$list_ids          = array_values( array_unique( array_merge( $has_marketing ? $marketing_ids : $non_marketing_ids, $lead_ids ) ) );
 		$unlink_ids        = array_values( array_diff( $has_marketing ? $non_marketing_ids : $marketing_ids, $list_ids ) );
 		$api               = $this->brevo->api();
 
@@ -220,7 +233,7 @@ class FSD_Elementor_Brevo_Action extends Action_Base {
 			if ( ! is_wp_error( $result ) && ( $list_ids || $unlink_ids ) ) {
 				$result = $api->update_contact_lists( $email, $list_ids, $unlink_ids );
 			}
-			$message = $form_name . ': Kontakt eingetragen (' . ( $has_marketing ? 'mit Marketing' : 'ohne Marketing' ) . ')';
+			$message = $form_name . ': Lead eingetragen (' . ( $has_marketing ? 'mit Marketing' : 'ohne Marketing' ) . ')';
 		}
 
 		if ( is_wp_error( $result ) ) {
