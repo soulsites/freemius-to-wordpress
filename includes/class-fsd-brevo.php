@@ -68,6 +68,7 @@ class FSD_Brevo {
 			'api_key'                => '',
 			'marketing_list_ids'     => '',
 			'non_marketing_list_ids' => '',
+			'lead_list_ids'          => '',
 			'reseller'               => 'Freemius',
 			'attributes'             => array_keys( self::attributes() ),
 		);
@@ -100,6 +101,7 @@ class FSD_Brevo {
 		$out['api_key']                = ! empty( $input['api_key'] ) ? sanitize_text_field( wp_unslash( $input['api_key'] ) ) : $old['api_key'];
 		$out['marketing_list_ids']     = isset( $input['marketing_list_ids'] ) ? implode( ',', self::parse_list_ids( wp_unslash( $input['marketing_list_ids'] ) ) ) : '';
 		$out['non_marketing_list_ids'] = isset( $input['non_marketing_list_ids'] ) ? implode( ',', self::parse_list_ids( wp_unslash( $input['non_marketing_list_ids'] ) ) ) : '';
+		$out['lead_list_ids']          = isset( $input['lead_list_ids'] ) ? implode( ',', self::parse_list_ids( wp_unslash( $input['lead_list_ids'] ) ) ) : '';
 		$out['reseller']               = isset( $input['reseller'] ) ? sanitize_text_field( wp_unslash( $input['reseller'] ) ) : $out['reseller'];
 
 		$allowed           = array_keys( self::attributes() );
@@ -194,10 +196,15 @@ class FSD_Brevo {
 			return $contact;
 		}
 		$current = ( $contact && isset( $contact->attributes ) ) ? (array) $contact->attributes : array();
-		$values  = $this->values_from_payment( $user, $payment, $objects, $current, null === $contact );
-		$result  = $this->push( $email, $values, true, null === $contact );
+		$values   = $this->values_from_payment( $user, $payment, $objects, $current, null === $contact );
+		$was_lead = $contact && (bool) array_intersect(
+			self::parse_list_ids( self::get_settings()['lead_list_ids'] ),
+			array_map( 'intval', (array) ( $contact->listIds ?? array() ) )
+		);
+		$result   = $this->push( $email, $values, true, null === $contact, true );
 
-		$this->log_result( $result, $email, 'payment.created', ( null === $contact ? 'Kontakt angelegt' : 'Kontakt aktualisiert' ), $pay_id );
+		$message = null === $contact ? 'Kontakt angelegt' : ( $was_lead ? 'Lead zu Kunde konvertiert' : 'Kontakt aktualisiert' );
+		$this->log_result( $result, $email, 'payment.created', $message, $pay_id );
 		return $result;
 	}
 
@@ -230,7 +237,9 @@ class FSD_Brevo {
 			'AFFILIATE_ID'       => ! empty( $payment->affiliate_id ) ? (string) $payment->affiliate_id : '',
 			'LAND'               => isset( $payment->country_code ) ? strtoupper( (string) $payment->country_code ) : '',
 			'RESELLER'           => self::get_settings()['reseller'],
-			'MARKETING_MAILS'    => self::consent_value( $user, $is_new ),
+			// Der Checkout-Wert ist der aktuelle Stand. Null/unklar wird aus
+			// Datenschutzgründen wie keine Einwilligung behandelt.
+			'MARKETING_MAILS'    => self::consent_value( $user, true ),
 		);
 	}
 
@@ -286,7 +295,7 @@ class FSD_Brevo {
 	 *
 	 * @return array|WP_Error Liste übersprungener Attribute bei Erfolg.
 	 */
-	private function push( $email, $values, $add_to_lists, $is_new = null ) {
+	private function push( $email, $values, $add_to_lists, $is_new = null, $remove_from_leads = false ) {
 		$s                         = self::get_settings();
 		list( $payload, $skipped ) = $this->prepare_attributes( array_intersect_key( $values, array_flip( (array) $s['attributes'] ) ) );
 		$add_ids                   = array();
@@ -298,7 +307,10 @@ class FSD_Brevo {
 			$remove_ids    = 'YES' === $values['MARKETING_MAILS'] ? $no_marketing : $marketing_ids;
 			$remove_ids    = array_values( array_diff( $remove_ids, $add_ids ) );
 		}
-
+		if ( $remove_from_leads ) {
+			$remove_ids = array_values( array_unique( array_merge( $remove_ids, self::parse_list_ids( $s['lead_list_ids'] ) ) ) );
+			$remove_ids = array_values( array_diff( $remove_ids, $add_ids ) );
+		}
 		// Bei Zahlungen bestehender Kontakte zuerst die idempotente Listenänderung
 		// ausführen. So kann ein späterer Attributfehler den Umsatz nicht verdoppeln.
 		if ( false === $is_new && ( $add_ids || $remove_ids ) ) {
@@ -495,6 +507,7 @@ class FSD_Brevo {
 					<tr><th><label for="fsd-brevo-api-key">API-Key</label></th><td><input type="password" autocomplete="new-password" id="fsd-brevo-api-key" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[api_key]" placeholder="<?php echo $s['api_key'] ? esc_attr__( 'Gespeichert – leer lassen zum Beibehalten', 'freemius-dashboard' ) : 'xkeysib-…'; ?>" /><p class="description">Brevo → SMTP &amp; API → API-Keys.</p></td></tr>
 					<tr><th><label for="fsd-brevo-marketing-list-ids">Liste(n) mit Marketing</label></th><td><input id="fsd-brevo-marketing-list-ids" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[marketing_list_ids]" value="<?php echo esc_attr( $s['marketing_list_ids'] ); ?>" placeholder="z. B. 3" /><p class="description">Kommagetrennte Brevo-Listen-IDs für Kontakte mit Marketing-Einwilligung.</p></td></tr>
 					<tr><th><label for="fsd-brevo-non-marketing-list-ids">Liste(n) ohne Marketing</label></th><td><input id="fsd-brevo-non-marketing-list-ids" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[non_marketing_list_ids]" value="<?php echo esc_attr( $s['non_marketing_list_ids'] ); ?>" placeholder="z. B. 7" /><p class="description">Kontakte ohne Einwilligung oder mit Brevo-Abmeldung werden hierhin verschoben und aus der Marketing-Liste entfernt.</p></td></tr>
+					<tr><th><label for="fsd-brevo-lead-list-ids">Lead-Liste(n)</label></th><td><input id="fsd-brevo-lead-list-ids" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[lead_list_ids]" value="<?php echo esc_attr( $s['lead_list_ids'] ); ?>" placeholder="z. B. 11" /><p class="description">Elementor-Kontakte ohne Freemius-Kauf werden zusätzlich hier eingetragen. Beim ersten Kauf entfernt der Abgleich die Lead-Zuordnung automatisch.</p></td></tr>
 					<tr><th><label for="fsd-brevo-reseller">Wert für RESELLER</label></th><td><input id="fsd-brevo-reseller" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[reseller]" value="<?php echo esc_attr( $s['reseller'] ); ?>" /></td></tr>
 					<tr><th>Attribute</th><td>
 						<?php foreach ( self::attributes() as $key => $label ) : ?>
@@ -676,8 +689,9 @@ class FSD_Brevo {
 		}
 
 		$is_new = array_key_exists( 'is_new', $buyer ) ? (bool) $buyer['is_new'] : null;
-		$result = $this->push( $buyer['email'], $buyer['values'], true, $is_new );
-		$this->log_result( $result, $buyer['email'], 'abgleich', 'Kontakt aus Abgleich übertragen' );
+		$result  = $this->push( $buyer['email'], $buyer['values'], true, $is_new, true, false );
+		$message = ! empty( $buyer['was_lead'] ) ? 'Lead zu Kunde konvertiert' : 'Kontakt aus Abgleich übertragen';
+		$this->log_result( $result, $buyer['email'], 'abgleich', $message );
 		return $result;
 	}
 
