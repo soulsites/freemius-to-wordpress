@@ -100,16 +100,22 @@ class FSD_Brevo_Reconcile {
 		if ( 'done' === $state['phase'] ) {
 			delete_transient( $key );
 			self::set_missing( $state['missing'] );
+			$message = sprintf(
+				'%d Käufer abgeglichen, %d synchronisiert, %d Brevo-Abmeldungen nach Freemius übernommen, %d Fehler.',
+				count( $state['buyers'] ),
+				$state['synced'],
+				$state['optouts'],
+				count( $state['missing'] )
+			);
+			set_transient(
+				'fsd_brevo_notice_' . get_current_user_id(),
+				array( $state['missing'] ? 'error' : 'done', $message ),
+				MINUTE_IN_SECONDS
+			);
 			wp_send_json_success(
 				array(
 					'done'    => true,
-					'message' => sprintf(
-						'%d Käufer abgeglichen, %d synchronisiert, %d Brevo-Abmeldungen nach Freemius übernommen, %d Fehler.',
-						count( $state['buyers'] ),
-						$state['synced'],
-						$state['optouts'],
-						count( $state['missing'] )
-					),
+					'message' => $message,
 				)
 			);
 		}

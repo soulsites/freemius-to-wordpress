@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.10.0
+Stable tag: 1.10.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -64,6 +64,10 @@ Der Endpoint akzeptiert ausschließlich POST-Anfragen. Ein direkter Aufruf der W
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.10.1 =
+* Fix: WordPress-Admin-Assets werden anhand der tatsächlich von WordPress vergebenen Seiten-Hooks geladen. Dadurch reagieren der Brevo-Abgleich und die übrigen Buttons auf Unterseiten wieder auf Klicks.
+* Verbesserung: Das Ergebnis eines abgeschlossenen Brevo-Abgleichs bleibt nach dem automatischen Neuladen als Admin-Hinweis sichtbar.
 
 = 1.10.0 =
 * Neu: Getrennte Brevo-Listen für Kontakte mit und ohne Marketing-Einwilligung. Statusänderungen verschieben Kontakte automatisch in die richtige Liste und entfernen sie aus der jeweils anderen.
