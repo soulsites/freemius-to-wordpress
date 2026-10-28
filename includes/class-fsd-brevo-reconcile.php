@@ -9,7 +9,7 @@
  * Transient je Admin-Nutzer.
  *
  * Phasen: payments (Freemius-Zahlungen seitenweise laden) → users (fehlende
- * Nutzerdaten nachladen) → brevo (je Käufer prüfen, ob Kontakt existiert) → done.
+ * Nutzerdaten nachladen) → brevo (je Käufer vollständig synchronisieren) → done.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -83,6 +83,8 @@ class FSD_Brevo_Reconcile {
 				'pending'  => array(),
 				'buyers'   => array(),
 				'checked'  => 0,
+				'synced'   => 0,
+				'optouts'  => 0,
 				'missing'  => array(),
 			);
 		}
@@ -101,7 +103,13 @@ class FSD_Brevo_Reconcile {
 			wp_send_json_success(
 				array(
 					'done'    => true,
-					'message' => sprintf( '%d Käufer geprüft, %d fehlen in Brevo.', count( $state['buyers'] ), count( $state['missing'] ) ),
+					'message' => sprintf(
+						'%d Käufer abgeglichen, %d synchronisiert, %d Brevo-Abmeldungen nach Freemius übernommen, %d Fehler.',
+						count( $state['buyers'] ),
+						$state['synced'],
+						$state['optouts'],
+						count( $state['missing'] )
+					),
 				)
 			);
 		}
@@ -169,19 +177,38 @@ class FSD_Brevo_Reconcile {
 		return true;
 	}
 
-	/** Einen Käufer in Brevo prüfen. */
+	/** Einen Käufer vollständig abgleichen; Brevo-Abmeldungen haben Vorrang. */
 	private function run_brevo( &$state ) {
 		if ( $state['checked'] >= count( $state['buyers'] ) ) {
 			$state['phase'] = 'done';
 			return true;
 		}
 		$buyer   = $state['buyers'][ $state['checked'] ];
-		$present = $this->brevo->check_presence( $buyer['email'] );
-		if ( is_wp_error( $present ) ) {
-			return $present;
+		$contact = $this->brevo->get_contact( $buyer['email'] );
+		if ( is_wp_error( $contact ) ) {
+			$buyer['error']       = $contact->get_error_message();
+			$state['missing'][]   = $buyer;
+			++$state['checked'];
+			return true;
 		}
-		if ( ! $present ) {
+
+		$buyer['is_new'] = null === $contact;
+		if ( $contact && FSD_Brevo::is_brevo_opted_out( $contact ) ) {
+			if ( 'NO' !== FSD_Brevo::consent_value( (object) array( 'is_marketing_allowed' => $buyer['is_marketing_allowed'] ), false ) ) {
+				$buyer['sync_freemius_opt_out'] = true;
+			}
+			$buyer['values']['MARKETING_MAILS'] = 'NO';
+		}
+
+		$result = $this->brevo->transfer_buyer( $buyer );
+		if ( is_wp_error( $result ) ) {
+			$buyer['error']     = $result->get_error_message();
 			$state['missing'][] = $buyer;
+		} else {
+			++$state['synced'];
+			if ( ! empty( $buyer['sync_freemius_opt_out'] ) ) {
+				++$state['optouts'];
+			}
 		}
 		++$state['checked'];
 		return true;
@@ -250,8 +277,10 @@ class FSD_Brevo_Reconcile {
 			$total     = round( $prev['UMSATZ_GESAMT'] + $payment['gross'], 2 );
 
 			$buyers[ $email ] = array(
-				'email'  => $email,
-				'values' => array(
+				'email'                => $email,
+				'user_id'              => '' !== $user->id ? (int) $user->id : (int) $payment['user_id'],
+				'is_marketing_allowed' => $user->is_marketing_allowed,
+				'values'               => array(
 					'FIRSTNAME'          => $user->first,
 					'LASTNAME'           => $user->last,
 					'FREEMIUS_ID'        => '' !== $user->id ? $user->id : (string) $payment['user_id'],

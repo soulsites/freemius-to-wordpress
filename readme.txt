@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.9.0
+Stable tag: 1.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -18,7 +18,7 @@ Dieses Plugin verbindet deine WordPress-Website mit deinem Freemius-Verkäuferko
 * Die Summe der Netto-Einnahmen des ausgewählten Monats (je Währung).
 * Ein Diagramm der Käufe der letzten 30 Tage.
 * Automatische E-Mail-Benachrichtigungen bei jedem neuen Kauf über einen Freemius-Webhook.
-* Brevo-Synchronisierung: Käufer werden nach jedem Kauf per API in Brevo eingetragen (inkl. Marketing-Einwilligung `MARKETING_MAILS`), mit Protokoll und Brevo-Status-Spalte im Dashboard.
+* Bidirektionale Brevo-Synchronisierung: Käufer werden abhängig von ihrer Marketing-Einwilligung in zwei getrennte Listen einsortiert. Brevo-Abmeldungen werden beim Abgleich nach Freemius zurückgeschrieben.
 * Elementor-Pro-Formularaktion „Brevo“ mit Double Opt-in.
 * Eine Affiliate-Partner-Übersicht mit Provisionssätzen und im Monat verdienter Provision.
 * Shortcode `[fsd_affiliate_signup]` für ein öffentliches Anmeldeformular für neue Affiliate-Partner.
@@ -64,6 +64,13 @@ Der Endpoint akzeptiert ausschließlich POST-Anfragen. Ein direkter Aufruf der W
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.10.0 =
+* Neu: Getrennte Brevo-Listen für Kontakte mit und ohne Marketing-Einwilligung. Statusänderungen verschieben Kontakte automatisch in die richtige Liste und entfernen sie aus der jeweils anderen.
+* Neu: Der vollständige Abgleich erkennt globale sowie listenbezogene Brevo-Abmeldungen und setzt `is_marketing_allowed` für bereits abgemeldete Kontakte auch nachträglich in Freemius auf `false`.
+* Änderung: Der Abgleich synchronisiert jetzt Kontakte, Attribute und Listen vollständig; nur fehlgeschlagene Kontakte bleiben zur gezielten Wiederholung stehen.
+* Fix: Temporäre Brevo-Fehler (HTTP 429/5xx) werden mit Backoff wiederholt. Fehlgeschlagene Webhook-Übertragungen erhalten zusätzlich drei zeitversetzte Neuversuche.
+* Fix: Freemius-Werte für `is_marketing_allowed` werden unabhängig davon korrekt verarbeitet, ob die API boolesche oder textuelle Werte liefert.
 
 = 1.9.0 =
 * Neu: Elementor-Pro-Formularaktion „Brevo“ (wie die Mailchimp-/ActiveCampaign-Integration). Trägt Absender in Brevo-Listen ein – direkt oder per Brevo-Double-Opt-in – mit Feld-Zuordnung, optionalem Einwilligungsfeld, `MARKETING_MAILS` und frei definierbaren Attributen. Nutzt den API-Key aus „Freemius → Brevo“ und schreibt ins Brevo-Protokoll.

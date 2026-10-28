@@ -21,7 +21,7 @@ class FSD_Brevo_Api {
 	/**
 	 * @return mixed|null|WP_Error Dekodierte Antwort, null bei leerer Antwort (z. B. 204).
 	 */
-	private function request( $method, $path, $body = null, $query = array(), $timeout = 20 ) {
+	private function request( $method, $path, $body = null, $query = array(), $timeout = 20, $retry = true ) {
 		if ( ! $this->is_configured() ) {
 			return new WP_Error( 'fsd_brevo_not_configured', __( 'Brevo ist nicht vollständig konfiguriert.', 'freemius-dashboard' ) );
 		}
@@ -42,17 +42,39 @@ class FSD_Brevo_Api {
 		if ( null !== $body ) {
 			$args['body'] = wp_json_encode( $body );
 		}
-		$response = wp_remote_request( $url, $args );
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-		$code = (int) wp_remote_retrieve_response_code( $response );
-		$data = json_decode( wp_remote_retrieve_body( $response ) );
-		if ( $code < 200 || $code >= 300 ) {
+		$attempts = $retry ? 3 : 1;
+		for ( $attempt = 1; $attempt <= $attempts; $attempt++ ) {
+			$response = wp_remote_request( $url, $args );
+			if ( is_wp_error( $response ) ) {
+				return $response;
+			}
+			$code = (int) wp_remote_retrieve_response_code( $response );
+			$data = json_decode( wp_remote_retrieve_body( $response ) );
+			if ( $code >= 200 && $code < 300 ) {
+				return $data;
+			}
+
+			// 429 und vorübergehende Brevo-Serverfehler treten gelegentlich auf.
+			// Solche schnellen HTTP-Antworten gefahrlos mit kurzem Backoff wiederholen.
+			if ( $attempt < $attempts && ( 429 === $code || $code >= 500 ) ) {
+				$retry_after = (int) wp_remote_retrieve_header( $response, 'retry-after' );
+				sleep( max( 1, min( 5, $retry_after ?: $attempt ) ) );
+				continue;
+			}
+
 			$message = isset( $data->message ) ? (string) $data->message : sprintf( __( 'Brevo API-Fehler (HTTP %d).', 'freemius-dashboard' ), $code );
 			return new WP_Error( 'fsd_brevo_api_error', $message, array( 'status' => $code ) );
 		}
-		return $data;
+	}
+
+	/** Prüft, ob ein Fehler bei einem späteren Versuch voraussichtlich behebbar ist. */
+	public static function is_transient_error( $error ) {
+		if ( ! is_wp_error( $error ) ) {
+			return false;
+		}
+		$data   = $error->get_error_data();
+		$status = is_array( $data ) ? (int) ( $data['status'] ?? 0 ) : 0;
+		return 0 === $status || 429 === $status || $status >= 500;
 	}
 
 	public function test() {
@@ -85,6 +107,25 @@ class FSD_Brevo_Api {
 			$body['listIds'] = array_values( array_map( 'intval', $list_ids ) );
 		}
 		$result = $this->request( 'POST', 'contacts', $body );
+		return is_wp_error( $result ) ? $result : true;
+	}
+
+	/**
+	 * Ordnet einen bestehenden Kontakt Listen zu und entfernt ihn gleichzeitig
+	 * aus den jeweils entgegengesetzten Listen.
+	 */
+	public function update_contact_lists( $email, $list_ids, $unlink_list_ids ) {
+		$body = array();
+		if ( $list_ids ) {
+			$body['listIds'] = array_values( array_unique( array_map( 'intval', $list_ids ) ) );
+		}
+		if ( $unlink_list_ids ) {
+			$body['unlinkListIds'] = array_values( array_unique( array_map( 'intval', $unlink_list_ids ) ) );
+		}
+		if ( ! $body ) {
+			return true;
+		}
+		$result = $this->request( 'PUT', 'contacts/' . rawurlencode( $email ), $body, array( 'identifierType' => 'email_id' ) );
 		return is_wp_error( $result ) ? $result : true;
 	}
 
@@ -162,7 +203,8 @@ class FSD_Brevo_Api {
 		if ( $attributes ) {
 			$body['attributes'] = (object) $attributes;
 		}
-		$result = $this->request( 'POST', 'contacts/doubleOptinConfirmation', $body );
+		// Nicht automatisch wiederholen: Sonst könnte Brevo mehrere DOI-Mails senden.
+		$result = $this->request( 'POST', 'contacts/doubleOptinConfirmation', $body, array(), 20, false );
 		return is_wp_error( $result ) ? $result : true;
 	}
 }
