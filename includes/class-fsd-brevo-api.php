@@ -193,7 +193,7 @@ class FSD_Brevo_Api {
 	 * (Template mit {{ doubleoptin }}-Link) und legt den Kontakt erst nach
 	 * Klick auf den Link in den Listen an.
 	 */
-	public function double_optin( $email, $attributes, $list_ids, $template_id, $redirect_url ) {
+	public function double_optin( $email, $attributes, $list_ids, $template_id, $redirect_url, $exclude_list_ids = array() ) {
 		$body = array(
 			'email'          => $email,
 			'includeListIds' => array_values( array_map( 'intval', $list_ids ) ),
@@ -202,6 +202,9 @@ class FSD_Brevo_Api {
 		);
 		if ( $attributes ) {
 			$body['attributes'] = (object) $attributes;
+		}
+		if ( $exclude_list_ids ) {
+			$body['excludeListIds'] = array_values( array_unique( array_map( 'intval', $exclude_list_ids ) ) );
 		}
 		// Nicht automatisch wiederholen: Sonst könnte Brevo mehrere DOI-Mails senden.
 		$result = $this->request( 'POST', 'contacts/doubleOptinConfirmation', $body, array(), 20, false );

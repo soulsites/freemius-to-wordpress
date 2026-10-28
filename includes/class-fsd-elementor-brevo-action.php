@@ -65,8 +65,15 @@ class FSD_Elementor_Brevo_Action extends Action_Base {
 		$widget->add_control(
 			'fsd_brevo_list_ids',
 			$lists
-				? array( 'label' => 'Listen', 'type' => Controls_Manager::SELECT2, 'multiple' => true, 'label_block' => true, 'options' => $lists )
-				: array( 'label' => 'Listen-IDs', 'type' => Controls_Manager::TEXT, 'placeholder' => 'z. B. 3, 7', 'description' => 'Kommagetrennt.' )
+				? array( 'label' => 'Liste(n) mit Marketing', 'type' => Controls_Manager::SELECT2, 'multiple' => true, 'label_block' => true, 'options' => $lists )
+				: array( 'label' => 'Listen-IDs mit Marketing', 'type' => Controls_Manager::TEXT, 'placeholder' => 'z. B. 3, 7', 'description' => 'Kommagetrennt.' )
+		);
+
+		$widget->add_control(
+			'fsd_brevo_non_marketing_list_ids',
+			$lists
+				? array( 'label' => 'Liste(n) ohne Marketing', 'type' => Controls_Manager::SELECT2, 'multiple' => true, 'label_block' => true, 'options' => $lists )
+				: array( 'label' => 'Listen-IDs ohne Marketing', 'type' => Controls_Manager::TEXT, 'placeholder' => 'z. B. 9', 'description' => 'Kommagetrennt.' )
 		);
 
 		$widget->add_control(
@@ -119,17 +126,18 @@ class FSD_Elementor_Brevo_Action extends Action_Base {
 			array(
 				'label'       => 'Feld-ID Einwilligung (optional)',
 				'type'        => Controls_Manager::TEXT,
-				'description' => 'z. B. ein Akzeptanz-Feld. Ist es gesetzt und nicht angehakt, wird nichts an Brevo übertragen.',
+				'description' => 'z. B. ein Akzeptanz-Feld. Angehakt wählt die Marketing-Liste, nicht angehakt die Liste ohne Marketing.',
 			)
 		);
 
 		$widget->add_control(
 			'fsd_brevo_marketing_mails',
 			array(
-				'label'        => 'MARKETING_MAILS = YES setzen',
+				'label'        => 'Ohne Einwilligungsfeld: Marketing',
 				'type'         => Controls_Manager::SWITCHER,
 				'default'      => 'yes',
 				'return_value' => 'yes',
+				'description'  => 'Wird nur verwendet, wenn keine Feld-ID für die Einwilligung gesetzt ist.',
 			)
 		);
 
@@ -162,7 +170,7 @@ class FSD_Elementor_Brevo_Action extends Action_Base {
 	}
 
 	public function on_export( $element ) {
-		foreach ( array( 'fsd_brevo_list_ids', 'fsd_brevo_doi_template' ) as $key ) {
+		foreach ( array( 'fsd_brevo_list_ids', 'fsd_brevo_non_marketing_list_ids', 'fsd_brevo_doi_template' ) as $key ) {
 			unset( $element['settings'][ $key ] );
 		}
 		return $element;
@@ -183,17 +191,21 @@ class FSD_Elementor_Brevo_Action extends Action_Base {
 			return;
 		}
 
-		if ( ! empty( $settings['fsd_brevo_consent_field'] ) && '' === $this->field( $fields, $settings['fsd_brevo_consent_field'] ) ) {
-			( new FSD_Brevo_Log() )->add( FSD_Brevo_Log::STATUS_SKIPPED, $email, self::LOG_EVENT, $form_name . ': keine Einwilligung – nicht übertragen.' );
-			return;
-		}
+		$consent_field = trim( (string) ( $settings['fsd_brevo_consent_field'] ?? '' ) );
+		$has_marketing = '' !== $consent_field
+			? '' !== $this->field( $fields, $consent_field )
+			: 'yes' === ( $settings['fsd_brevo_marketing_mails'] ?? '' );
+		$settings['_fsd_resolved_marketing'] = $has_marketing ? 'yes' : 'no';
 
 		list( $attributes, $skipped ) = $this->brevo->prepare_attributes( $this->attribute_values( $settings, $fields ) );
 
-		$list_ids = FSD_Brevo::parse_list_ids( implode( ',', (array) ( $settings['fsd_brevo_list_ids'] ?? array() ) ) );
-		$api      = $this->brevo->api();
+		$marketing_ids     = FSD_Brevo::parse_list_ids( implode( ',', (array) ( $settings['fsd_brevo_list_ids'] ?? array() ) ) );
+		$non_marketing_ids = FSD_Brevo::parse_list_ids( implode( ',', (array) ( $settings['fsd_brevo_non_marketing_list_ids'] ?? array() ) ) );
+		$list_ids          = $has_marketing ? $marketing_ids : $non_marketing_ids;
+		$unlink_ids        = array_values( array_diff( $has_marketing ? $non_marketing_ids : $marketing_ids, $list_ids ) );
+		$api               = $this->brevo->api();
 
-		if ( 'yes' === ( $settings['fsd_brevo_double_optin'] ?? '' ) ) {
+		if ( $has_marketing && 'yes' === ( $settings['fsd_brevo_double_optin'] ?? '' ) ) {
 			$template = absint( $settings['fsd_brevo_doi_template'] ?? 0 );
 			$redirect = ! empty( $settings['fsd_brevo_doi_redirect'] ) ? esc_url_raw( $settings['fsd_brevo_doi_redirect'] ) : home_url( '/' );
 
@@ -201,11 +213,14 @@ class FSD_Elementor_Brevo_Action extends Action_Base {
 				$this->fail( $ajax_handler, $email, 'Für Double Opt-in müssen DOI-Template und mindestens eine Liste gesetzt sein.', $form_name );
 				return;
 			}
-			$result  = $api->double_optin( $email, $attributes, $list_ids, $template, $redirect );
+			$result  = $api->double_optin( $email, $attributes, $list_ids, $template, $redirect, $unlink_ids );
 			$message = $form_name . ': Double-Opt-in-Mail versendet';
 		} else {
 			$result  = $api->upsert_contact( $email, $attributes, $list_ids );
-			$message = $form_name . ': Kontakt eingetragen';
+			if ( ! is_wp_error( $result ) && ( $list_ids || $unlink_ids ) ) {
+				$result = $api->update_contact_lists( $email, $list_ids, $unlink_ids );
+			}
+			$message = $form_name . ': Kontakt eingetragen (' . ( $has_marketing ? 'mit Marketing' : 'ohne Marketing' ) . ')';
 		}
 
 		if ( is_wp_error( $result ) ) {
@@ -223,9 +238,7 @@ class FSD_Elementor_Brevo_Action extends Action_Base {
 			'FIRSTNAME' => $this->field( $fields, $settings['fsd_brevo_firstname_field'] ?? '' ),
 			'LASTNAME'  => $this->field( $fields, $settings['fsd_brevo_lastname_field'] ?? '' ),
 		);
-		if ( 'yes' === ( $settings['fsd_brevo_marketing_mails'] ?? '' ) ) {
-			$values['MARKETING_MAILS'] = 'YES';
-		}
+		$values['MARKETING_MAILS'] = 'yes' === ( $settings['_fsd_resolved_marketing'] ?? '' ) ? 'YES' : 'NO';
 
 		foreach ( preg_split( '/\r\n|\r|\n/', (string) ( $settings['fsd_brevo_attributes'] ?? '' ) ) as $line ) {
 			if ( ! preg_match( '/^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/', $line, $match ) ) {

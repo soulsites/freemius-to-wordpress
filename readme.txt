@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.10.2
+Stable tag: 1.10.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -64,6 +64,11 @@ Der Endpoint akzeptiert ausschließlich POST-Anfragen. Ein direkter Aufruf der W
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.10.3 =
+* Neu: Die Elementor-Brevo-Aktion bietet getrennte Auswahlen für Listen mit und ohne Marketing-Einwilligung.
+* Änderung: Ein konfiguriertes Einwilligungsfeld bestimmt automatisch `MARKETING_MAILS` und die Ziel-Liste. Nicht angehakte Formulare werden in die Liste ohne Marketing einsortiert, statt vollständig übersprungen zu werden.
+* Änderung: Double Opt-in wird nur für Kontakte mit Marketing-Einwilligung versendet; Kontakte ohne Einwilligung werden direkt in die dafür konfigurierte Liste eingetragen.
 
 = 1.10.2 =
 * Fix: Die Brevo-Seite reiht ihren AJAX-Controller zusätzlich direkt beim Rendern als Footer-Script ein. Der Abgleich-Button funktioniert dadurch auch bei abweichenden Admin-Hooknamen oder angepassten Menü-Konstellationen.
