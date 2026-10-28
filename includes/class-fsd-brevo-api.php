@@ -129,6 +129,19 @@ class FSD_Brevo_Api {
 		return is_wp_error( $result ) ? $result : true;
 	}
 
+	/** Löscht einen Kontakt vollständig; ein bereits fehlender Kontakt gilt als Erfolg. */
+	public function delete_contact( $email ) {
+		$result = $this->request( 'DELETE', 'contacts/' . rawurlencode( $email ), null, array( 'identifierType' => 'email_id' ) );
+		if ( is_wp_error( $result ) ) {
+			$data = $result->get_error_data();
+			if ( is_array( $data ) && 404 === (int) ( $data['status'] ?? 0 ) ) {
+				return true;
+			}
+			return $result;
+		}
+		return true;
+	}
+
 	/**
 	 * @return array|WP_Error Attribut-Definitionen, indiziert nach Name (Großbuchstaben).
 	 */

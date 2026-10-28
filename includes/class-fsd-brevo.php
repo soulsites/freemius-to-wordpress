@@ -19,6 +19,7 @@ class FSD_Brevo {
 	const OPTION_KEY       = 'fsd_brevo_settings';
 	const ATTRIBUTES_CACHE = 'fsd_brevo_attributes';
 	const PRESENCE_PREFIX  = 'fsd_brevo_presence_';
+	const DELETED_OPTION   = 'fsd_brevo_deleted_contacts';
 
 	const PRESENCE_YES   = 'yes';
 	const PRESENCE_NO    = 'no';
@@ -29,6 +30,9 @@ class FSD_Brevo {
 
 	/** @var FSD_Brevo_Api|null */
 	private $api;
+
+	/** @var FSD_Api|null */
+	private $freemius_api;
 
 	/** @var bool */
 	private $admin_script_enqueued = false;
@@ -89,6 +93,18 @@ class FSD_Brevo {
 		return ! empty( $s['enabled'] ) && '' !== $s['api_key'];
 	}
 
+	/** Endgültige Freemius-Ereignisse, nach denen ohne weitere aktive Lizenz gelöscht wird. */
+	public static function deletion_events() {
+		return array(
+			'payment.refund',
+			'payment.dispute.closed',
+			'payment.dispute.lost',
+			'license.cancelled',
+			'license.expired',
+			'license.deleted',
+		);
+	}
+
 	public function register() {
 		register_setting( self::GROUP, self::OPTION_KEY, array( 'type' => 'array', 'sanitize_callback' => array( $this, 'sanitize' ), 'default' => self::defaults() ) );
 	}
@@ -140,6 +156,12 @@ class FSD_Brevo {
 		$payment = isset( $objects->payment ) ? $objects->payment : null;
 		$pay_id  = ( $payment && ! empty( $payment->id ) ) ? (string) $payment->id : '';
 
+		if ( in_array( $type, self::deletion_events(), true ) ) {
+			$result = $this->handle_deletion_event( $event, $objects, $user );
+			$this->schedule_retry( $event, $result );
+			return;
+		}
+
 		if ( ! $user || empty( $user->email ) ) {
 			$this->log->add( FSD_Brevo_Log::STATUS_ERROR, '', $type, 'Event enthält keine Käufer-E-Mail.', $pay_id );
 			return;
@@ -147,6 +169,7 @@ class FSD_Brevo {
 		$email = strtolower( (string) $user->email );
 
 		if ( 'payment.created' === $type ) {
+			self::clear_deleted_contact( $email, (int) ( $user->id ?? 0 ) );
 			$result = $this->sync_payment( $email, $user, $payment, $objects );
 			$this->schedule_retry( $event, $result );
 			return;
@@ -157,6 +180,104 @@ class FSD_Brevo {
 		$result  = $this->push( $email, array( 'MARKETING_MAILS' => $consent ), true );
 		$this->log_result( $result, $email, $type, 'MARKETING_MAILS = ' . $consent );
 		$this->schedule_retry( $event, $result );
+	}
+
+	/** Löscht nur, wenn für den Nutzer keine andere aktive Lizenz mehr besteht. */
+	private function handle_deletion_event( $event, $objects, $user ) {
+		$user_id = $this->event_user_id( $event, $objects, $user );
+		if ( ! $user && $user_id ) {
+			$fetched = $this->freemius_api()->get_user( $user_id );
+			if ( is_wp_error( $fetched ) ) {
+				$this->log_result( $fetched, '', (string) $event->type, 'Freemius-Nutzer für Löschung laden' );
+				return $fetched;
+			}
+			$user = $fetched;
+		}
+		$email = $user && ! empty( $user->email ) ? strtolower( trim( (string) $user->email ) ) : '';
+		if ( ! $user_id || ! is_email( $email ) ) {
+			$result = new WP_Error( 'fsd_brevo_delete_identity', 'Lösch-Event enthält keinen eindeutig auflösbaren Nutzer.' );
+			$this->log_result( $result, $email, (string) $event->type, '' );
+			return $result;
+		}
+
+		$active = $this->freemius_api()->get_active_user_licenses( $user_id );
+		if ( is_wp_error( $active ) ) {
+			$this->log_result( $active, $email, (string) $event->type, '' );
+			return $active;
+		}
+		if ( $active ) {
+			$this->log->add( FSD_Brevo_Log::STATUS_SKIPPED, $email, (string) $event->type, 'Kontakt behalten: weitere aktive Freemius-Lizenz vorhanden.' );
+			return true;
+		}
+
+		$result = $this->api()->delete_contact( $email );
+		if ( ! is_wp_error( $result ) ) {
+			self::mark_deleted_contact( $email, $user_id, (string) $event->type );
+			delete_transient( self::PRESENCE_PREFIX . md5( $email ) );
+		}
+		$this->log_result( is_wp_error( $result ) ? $result : array(), $email, (string) $event->type, 'Kontakt vollständig aus Brevo gelöscht' );
+		return $result;
+	}
+
+	private function event_user_id( $event, $objects, $user ) {
+		if ( $user && ! empty( $user->id ) ) {
+			return (int) $user->id;
+		}
+		if ( ! empty( $event->user_id ) ) {
+			return (int) $event->user_id;
+		}
+		foreach ( array( 'payment', 'subscription', 'license' ) as $key ) {
+			if ( isset( $objects->$key->user_id ) && $objects->$key->user_id ) {
+				return (int) $objects->$key->user_id;
+			}
+		}
+		return 0;
+	}
+
+	private function freemius_api() {
+		if ( null === $this->freemius_api ) {
+			$fs                 = FSD_Settings::get_settings();
+			$this->freemius_api = new FSD_Api( $fs['product_id'], $fs['public_key'], $fs['secret_key'], $fs['product_id'] );
+		}
+		return $this->freemius_api;
+	}
+
+	private static function mark_deleted_contact( $email, $user_id, $event ) {
+		$deleted           = get_option( self::DELETED_OPTION, array() );
+		$deleted           = is_array( $deleted ) ? $deleted : array();
+		$deleted[ $email ] = array( 'user_id' => (int) $user_id, 'event' => $event, 'time' => time() );
+		update_option( self::DELETED_OPTION, $deleted, false );
+	}
+
+	public static function clear_deleted_contact( $email, $user_id = 0 ) {
+		$email   = strtolower( trim( (string) $email ) );
+		$deleted = get_option( self::DELETED_OPTION, array() );
+		$changed = false;
+		foreach ( is_array( $deleted ) ? $deleted : array() as $deleted_email => $data ) {
+			if ( $deleted_email === $email || ( $user_id && (int) ( $data['user_id'] ?? 0 ) === (int) $user_id ) ) {
+				unset( $deleted[ $deleted_email ] );
+				$changed = true;
+			}
+		}
+		if ( $changed ) {
+			update_option( self::DELETED_OPTION, $deleted, false );
+		}
+	}
+
+	public static function is_deleted_contact( $email, $user_id = 0 ) {
+		$deleted = get_option( self::DELETED_OPTION, array() );
+		if ( ! is_array( $deleted ) ) {
+			return false;
+		}
+		if ( isset( $deleted[ strtolower( trim( (string) $email ) ) ] ) ) {
+			return true;
+		}
+		foreach ( $deleted as $data ) {
+			if ( $user_id && (int) ( $data['user_id'] ?? 0 ) === (int) $user_id ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Plant bei Timeouts, 429 und 5xx bis zu drei zeitversetzte Neuversuche. */
@@ -420,6 +541,14 @@ class FSD_Brevo {
 		$this->log->add( FSD_Brevo_Log::STATUS_SUCCESS, $email, $event, $message, $payment_id );
 	}
 
+	public function log_system_success( $message ) {
+		$this->log->add( FSD_Brevo_Log::STATUS_SUCCESS, '', 'abgleich.taeglich', $message );
+	}
+
+	public function log_system_error( $message ) {
+		$this->log->add( FSD_Brevo_Log::STATUS_ERROR, '', 'abgleich.taeglich', $message );
+	}
+
 	/* --------------------------------------------------------------------
 	 * Dashboard: Ist der Käufer in Brevo vorhanden?
 	 * ------------------------------------------------------------------ */
@@ -522,7 +651,7 @@ class FSD_Brevo {
 
 			<hr /><h2>Freemius-Webhook</h2>
 			<p><input class="large-text" readonly onclick="this.select()" value="<?php echo esc_url( rest_url( FSD_Webhook::NAMESPACE . '/webhook' ) ); ?>" /></p>
-			<p class="description">In Freemius aktivieren: <code>payment.created</code>, <code>user.marketing.opted_in</code>, <code>user.marketing.opted_out</code> und <code>user.marketing.reset</code>.</p>
+			<p class="description">In Freemius aktivieren: <code>payment.created</code>, <code>payment.refund</code>, <code>payment.dispute.closed</code>, <code>payment.dispute.lost</code>, <code>license.cancelled</code>, <code>license.expired</code>, <code>license.deleted</code> sowie die drei <code>user.marketing.*</code>-Events.</p>
 
 			<hr /><h2>Elementor-Formulare</h2>
 			<?php if ( FSD_Elementor_Integration::is_available() ) : ?>
@@ -533,7 +662,8 @@ class FSD_Brevo {
 			<?php endif; ?>
 
 			<hr /><h2>Käufer abgleichen</h2>
-			<p>Gleicht alle über Freemius-Zahlungen auffindbaren Käufer vollständig ab: Kontaktdaten, Marketing-Attribut und beide Listen. Abmeldungen aus Brevo werden dabei nach Freemius übernommen. Nur fehlgeschlagene Kontakte bleiben anschließend zur Wiederholung stehen.</p>
+			<p>Gleicht alle über Freemius-Zahlungen auffindbaren Käufer vollständig ab: Kontaktdaten, Marketing-Attribut sowie Marketing-, Nicht-Marketing- und Lead-Liste. Abmeldungen aus Brevo werden dabei nach Freemius übernommen. Nur fehlgeschlagene Kontakte bleiben anschließend zur Wiederholung stehen.</p>
+			<?php $this->render_daily_status(); ?>
 			<p>
 				<button type="button" class="fsd-btn fsd-btn--tonal" id="fsd-brevo-reconcile">Abgleich starten</button>
 				<span class="fsd-test-result" id="fsd-brevo-progress"></span>
@@ -543,6 +673,24 @@ class FSD_Brevo {
 		<div class="fsd-card"><?php $this->render_log(); ?></div>
 		</div>
 		<?php
+	}
+
+	private function render_daily_status() {
+		$next = wp_next_scheduled( FSD_Brevo_Reconcile::DAILY_HOOK );
+		$last = get_option( FSD_Brevo_Reconcile::DAILY_LAST_OPTION, array() );
+		echo '<p class="description">Automatischer Abgleich: täglich via WP-Cron';
+		if ( $next ) {
+			echo ' · nächster Start: ' . esc_html( wp_date( 'd.m.Y H:i', $next ) );
+		}
+		if ( is_array( $last ) && ! empty( $last['time'] ) ) {
+			echo ' · zuletzt: ' . esc_html( wp_date( 'd.m.Y H:i', $last['time'] ) );
+			if ( 'error' === ( $last['status'] ?? '' ) ) {
+				echo ' (Fehler: ' . esc_html( (string) ( $last['message'] ?? 'unbekannt' ) ) . ')';
+			} else {
+				echo ' (' . esc_html( (int) ( $last['synced'] ?? 0 ) ) . ' synchronisiert, ' . esc_html( (int) ( $last['errors'] ?? 0 ) ) . ' Fehler)';
+			}
+		}
+		echo '.</p>';
 	}
 
 	private function render_action_form( $action, $label, $hidden = array() ) {
@@ -678,9 +826,7 @@ class FSD_Brevo {
 	 */
 	public function transfer_buyer( $buyer ) {
 		if ( ! empty( $buyer['sync_freemius_opt_out'] ) && ! empty( $buyer['user_id'] ) ) {
-			$fs     = FSD_Settings::get_settings();
-			$api    = new FSD_Api( $fs['product_id'], $fs['public_key'], $fs['secret_key'], $fs['product_id'] );
-			$result = $api->update_user_marketing( $buyer['user_id'], false );
+			$result = $this->freemius_api()->update_user_marketing( $buyer['user_id'], false );
 			if ( is_wp_error( $result ) ) {
 				$this->log_result( $result, $buyer['email'], 'abgleich', 'Brevo-Abmeldung nach Freemius übertragen' );
 				return $result;

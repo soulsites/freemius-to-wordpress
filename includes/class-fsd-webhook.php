@@ -52,7 +52,11 @@ class FSD_Webhook {
 			wp_schedule_single_event( time(), self::CRON_HOOK, array( $event ) );
 		}
 
-		if ( is_object( $event ) && ! empty( $event->type ) && in_array( $event->type, array( 'payment.created', 'user.marketing.opted_in', 'user.marketing.opted_out', 'user.marketing.reset' ), true ) ) {
+		$brevo_events = array_merge(
+			array( 'payment.created', 'user.marketing.opted_in', 'user.marketing.opted_out', 'user.marketing.reset' ),
+			FSD_Brevo::deletion_events()
+		);
+		if ( is_object( $event ) && ! empty( $event->type ) && in_array( $event->type, $brevo_events, true ) ) {
 			// Brevo-Synchronisierung ebenfalls asynchron (siehe FSD_Brevo::handle_event()).
 			wp_schedule_single_event( time(), self::BREVO_CRON_HOOK, array( $event ) );
 		}
