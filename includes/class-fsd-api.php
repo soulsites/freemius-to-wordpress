@@ -271,6 +271,17 @@ class FSD_Api {
 		return $this->request( $path, 'PUT', array(), array( 'is_marketing_allowed' => (bool) $allowed ) );
 	}
 
+	/** Lädt die aktiven Lizenzen eines Produkt-Nutzers. */
+	public function get_active_user_licenses( $user_id ) {
+		$path   = $this->product_path( sprintf( 'users/%d/licenses.json', (int) $user_id ) );
+		// Für die Löschentscheidung reicht bereits eine einzige aktive Lizenz.
+		$result = $this->request( $path, 'GET', array( 'type' => 'active', 'count' => 1 ) );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		return isset( $result->licenses ) && is_array( $result->licenses ) ? $result->licenses : array();
+	}
+
 	/**
 	 * Lädt die Provisionsbedingungen ("Affiliate-Programm") des Produkts – u. a. den
 	 * Standard-Provisionssatz, der gilt, wenn ein Affiliate keine individuelle

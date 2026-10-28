@@ -23,6 +23,10 @@ class FSD_Brevo_Reconcile {
 	const TIME_BUDGET    = 12;
 	const STATE_PREFIX   = 'fsd_brevo_reconcile_';
 	const MISSING_PREFIX = 'fsd_brevo_missing_';
+	const DAILY_HOOK        = 'fsd_brevo_daily_reconcile';
+	const DAILY_STEP_HOOK   = 'fsd_brevo_daily_reconcile_step';
+	const DAILY_STATE_KEY   = 'fsd_brevo_reconcile_daily';
+	const DAILY_LAST_OPTION = 'fsd_brevo_daily_last';
 
 	/** @var FSD_Brevo */
 	private $brevo;
@@ -65,6 +69,22 @@ class FSD_Brevo_Reconcile {
 		return $this->freemius;
 	}
 
+	private static function initial_state() {
+		return array(
+			'phase'    => 'payments',
+			'offset'   => 0,
+			'payments' => array(),
+			'users'    => array(),
+			'pending'  => array(),
+			'buyers'   => array(),
+			'checked'  => 0,
+			'synced'   => 0,
+			'optouts'  => 0,
+			'missing'  => array(),
+			'retries'  => 0,
+		);
+	}
+
 	/* --------------------------------------------------------------------
 	 * Abgleich
 	 * ------------------------------------------------------------------ */
@@ -75,18 +95,7 @@ class FSD_Brevo_Reconcile {
 		$state = get_transient( $key );
 
 		if ( ! empty( $_POST['reset'] ) || ! is_array( $state ) ) {
-			$state = array(
-				'phase'    => 'payments',
-				'offset'   => 0,
-				'payments' => array(),
-				'users'    => array(),
-				'pending'  => array(),
-				'buyers'   => array(),
-				'checked'  => 0,
-				'synced'   => 0,
-				'optouts'  => 0,
-				'missing'  => array(),
-			);
+			$state = self::initial_state();
 		}
 
 		while ( 'done' !== $state['phase'] && $this->has_time() ) {
@@ -122,6 +131,92 @@ class FSD_Brevo_Reconcile {
 
 		set_transient( $key, $state, HOUR_IN_SECONDS );
 		wp_send_json_success( array( 'done' => false, 'message' => $this->progress( $state ) ) );
+	}
+
+	/* --------------------------------------------------------------------
+	 * Täglicher Hintergrund-Abgleich (WP-Cron, in kurzen Einzelschritten)
+	 * ------------------------------------------------------------------ */
+
+	public function schedule_daily() {
+		if ( ! FSD_Brevo::is_active() ) {
+			wp_clear_scheduled_hook( self::DAILY_HOOK );
+			wp_clear_scheduled_hook( self::DAILY_STEP_HOOK );
+			delete_transient( self::DAILY_STATE_KEY );
+			return;
+		}
+		if ( ! wp_next_scheduled( self::DAILY_HOOK ) ) {
+			wp_schedule_event( time() + 5 * MINUTE_IN_SECONDS, 'daily', self::DAILY_HOOK );
+		}
+	}
+
+	public function start_daily() {
+		if ( ! FSD_Brevo::is_active() ) {
+			return;
+		}
+		if ( ! is_array( get_transient( self::DAILY_STATE_KEY ) ) ) {
+			set_transient( self::DAILY_STATE_KEY, self::initial_state(), DAY_IN_SECONDS );
+		}
+		$this->schedule_daily_step( 1 );
+	}
+
+	public function run_daily_step() {
+		if ( ! FSD_Brevo::is_active() ) {
+			delete_transient( self::DAILY_STATE_KEY );
+			return;
+		}
+		$state = get_transient( self::DAILY_STATE_KEY );
+		if ( ! is_array( $state ) ) {
+			return;
+		}
+		$this->started = microtime( true );
+
+		while ( 'done' !== $state['phase'] && $this->has_time() ) {
+			$result = $this->{'run_' . $state['phase']}( $state );
+			if ( is_wp_error( $result ) ) {
+				++$state['retries'];
+				if ( $state['retries'] > 3 ) {
+					delete_transient( self::DAILY_STATE_KEY );
+					$message = 'Täglicher Abgleich abgebrochen: ' . $result->get_error_message();
+					update_option(
+						self::DAILY_LAST_OPTION,
+						array( 'time' => time(), 'status' => 'error', 'message' => $message ),
+						false
+					);
+					$this->brevo->log_system_error( $message );
+					return;
+				}
+				set_transient( self::DAILY_STATE_KEY, $state, DAY_IN_SECONDS );
+				$this->schedule_daily_step( 5 * MINUTE_IN_SECONDS );
+				return;
+			}
+			$state['retries'] = 0;
+		}
+
+		if ( 'done' === $state['phase'] ) {
+			delete_transient( self::DAILY_STATE_KEY );
+			$summary = array(
+				'time'     => time(),
+				'status'   => 'success',
+				'checked'  => count( $state['buyers'] ),
+				'synced'   => $state['synced'],
+				'optouts'  => $state['optouts'],
+				'errors'   => count( $state['missing'] ),
+			);
+			update_option( self::DAILY_LAST_OPTION, $summary, false );
+			$this->brevo->log_system_success(
+				sprintf( 'Täglicher Abgleich: %d geprüft, %d synchronisiert, %d Abmeldungen, %d Fehler.', $summary['checked'], $summary['synced'], $summary['optouts'], $summary['errors'] )
+			);
+			return;
+		}
+
+		set_transient( self::DAILY_STATE_KEY, $state, DAY_IN_SECONDS );
+		$this->schedule_daily_step( 10 );
+	}
+
+	private function schedule_daily_step( $delay ) {
+		if ( ! wp_next_scheduled( self::DAILY_STEP_HOOK ) ) {
+			wp_schedule_single_event( time() + max( 1, (int) $delay ), self::DAILY_STEP_HOOK );
+		}
 	}
 
 	private function progress( $state ) {
@@ -273,6 +368,9 @@ class FSD_Brevo_Reconcile {
 			$user      = (object) $users[ $payment['user_id'] ];
 			$object    = (object) $payment;
 			$email     = $user->email;
+			if ( FSD_Brevo::is_deleted_contact( $email, (int) $payment['user_id'] ) ) {
+				continue;
+			}
 			$is_refund = 'refund' === $payment['type'] || $payment['gross'] < 0;
 			$date      = FSD_Brevo::date_of( $object );
 			$prev      = $buyers[ $email ]['values'] ?? array(

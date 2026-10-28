@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.10.4
+Stable tag: 1.11.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -64,6 +64,12 @@ Der Endpoint akzeptiert ausschließlich POST-Anfragen. Ein direkter Aufruf der W
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.11.0 =
+* Neu: Täglicher automatischer Brevo-Abgleich über WP-Cron. Große Datenbestände werden in kurzen Hintergrund-Batches verarbeitet; Zeitpunkt und Ergebnis erscheinen auf der Brevo-Seite und im Protokoll.
+* Neu: Bei Erstattung, verlorenem/geschlossenem Dispute sowie abgelaufener, gekündigter oder gelöschter Lizenz wird der Brevo-Kontakt vollständig gelöscht, sobald keine weitere aktive Freemius-Lizenz mehr besteht. Eine reine Kündigung der automatischen Verlängerung löscht den Kontakt noch nicht vor dem Lizenzende.
+* Sicherheit: Vor jeder Löschung werden alle aktiven Lizenzen des Nutzers geprüft. Vorläufige Verlängerungsfehler lösen keine Löschung aus.
+* Neu: Gelöschte Kunden werden vom täglichen Abgleich nicht aufgrund alter Zahlungen erneut angelegt. Eine spätere Elementor-Anmeldung darf wieder als Lead eingetragen werden; erst ein neuer Kauf hebt die Kundensperre auf.
 
 = 1.10.4 =
 * Neu: Zentrale dritte Brevo-Liste für reine Leads ohne Freemius-Kauf. Elementor-Kontakte werden zusätzlich in diese Lead-Liste eingetragen.

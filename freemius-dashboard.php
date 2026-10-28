@@ -3,7 +3,7 @@
  * Plugin Name:       Freemius Dashboard
  * Plugin URI:        https://github.com/soulsites/freemius-to-wordpress
  * Description:       Verbindet WordPress mit der Freemius API und zeigt Käufe, Kundendaten und Umsatz in einem minimalistischen Dashboard (Material M3) an.
- * Version:           1.10.4
+ * Version:           1.11.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Freemius Dashboard
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'FSD_VERSION', '1.10.4' );
+define( 'FSD_VERSION', '1.11.0' );
 define( 'FSD_PLUGIN_FILE', __FILE__ );
 define( 'FSD_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'FSD_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -38,4 +38,5 @@ require_once FSD_PLUGIN_DIR . 'includes/class-fsd-affiliates.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-affiliate-signup.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-plugin.php';
 
+register_deactivation_hook( __FILE__, array( 'FSD_Plugin', 'deactivate' ) );
 FSD_Plugin::instance();

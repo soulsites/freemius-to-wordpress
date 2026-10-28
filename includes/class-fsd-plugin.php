@@ -63,6 +63,7 @@ class FSD_Plugin {
 		add_action( 'admin_init', array( $this->email_settings, 'register' ) );
 		add_action( 'admin_init', array( $this->brevo, 'register' ) );
 		add_action( 'init', array( $this->affiliate_signup, 'register' ) );
+		add_action( 'init', array( $this->brevo_reconcile, 'schedule_daily' ) );
 		add_action( 'rest_api_init', array( $this->webhook, 'register_routes' ) );
 		// Cron requests do not run rest_api_init. Register the callback during
 		// every plugin bootstrap so scheduled purchase notifications are handled.
@@ -73,9 +74,17 @@ class FSD_Plugin {
 		add_action( FSD_Webhook::BREVO_CRON_HOOK, array( $this->brevo, 'handle_event' ) );
 		add_action( 'wp_ajax_' . FSD_Brevo_Reconcile::AJAX_RECONCILE, array( $this->brevo_reconcile, 'ajax_reconcile_step' ) );
 		add_action( 'wp_ajax_' . FSD_Brevo_Reconcile::AJAX_TRANSFER, array( $this->brevo_reconcile, 'ajax_transfer_step' ) );
+		add_action( FSD_Brevo_Reconcile::DAILY_HOOK, array( $this->brevo_reconcile, 'start_daily' ) );
+		add_action( FSD_Brevo_Reconcile::DAILY_STEP_HOOK, array( $this->brevo_reconcile, 'run_daily_step' ) );
 		add_action( 'admin_post_fsd_brevo_transfer_missing', array( $this->brevo, 'transfer_missing' ) );
 		add_action( 'admin_post_fsd_brevo_test_connection', array( $this->brevo, 'test_connection' ) );
 		add_action( 'admin_post_fsd_brevo_clear_log', array( $this->brevo, 'clear_log' ) );
+	}
+
+	public static function deactivate() {
+		wp_clear_scheduled_hook( FSD_Brevo_Reconcile::DAILY_HOOK );
+		wp_clear_scheduled_hook( FSD_Brevo_Reconcile::DAILY_STEP_HOOK );
+		delete_transient( FSD_Brevo_Reconcile::DAILY_STATE_KEY );
 	}
 
 	public function register_menu() {
