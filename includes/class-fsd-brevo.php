@@ -30,6 +30,9 @@ class FSD_Brevo {
 	/** @var FSD_Brevo_Api|null */
 	private $api;
 
+	/** @var bool */
+	private $admin_script_enqueued = false;
+
 	public function __construct() {
 		$this->log = new FSD_Brevo_Log();
 	}
@@ -440,10 +443,39 @@ class FSD_Brevo {
 	 * Admin-Seite
 	 * ------------------------------------------------------------------ */
 
+	/**
+	 * Lädt den AJAX-Controller der Brevo-Seite. Die Methode darf mehrfach
+	 * aufgerufen werden; WordPress gibt Script und Lokalisierung nur einmal aus.
+	 * Der Aufruf aus render() ist ein bewusstes Sicherheitsnetz, falls ein Host
+	 * einen unerwarteten admin_enqueue_scripts-Hooknamen erzeugt.
+	 */
+	public function enqueue_admin_script() {
+		if ( $this->admin_script_enqueued ) {
+			return;
+		}
+		$this->admin_script_enqueued = true;
+		wp_enqueue_script( 'fsd-brevo', FSD_PLUGIN_URL . 'assets/js/fsd-brevo.js', array( 'jquery' ), FSD_VERSION, true );
+		wp_localize_script(
+			'fsd-brevo',
+			'fsdBrevo',
+			array(
+				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+				'nonce'   => wp_create_nonce( FSD_Brevo_Reconcile::NONCE ),
+				'actions' => array(
+					'reconcile' => FSD_Brevo_Reconcile::AJAX_RECONCILE,
+					'transfer'  => FSD_Brevo_Reconcile::AJAX_TRANSFER,
+				),
+			)
+		);
+	}
+
 	public function render() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
+		// Footer-Scripts können auch während des Seiten-Renderings noch sicher
+		// eingereiht werden. Damit funktioniert der Button unabhängig vom Hooknamen.
+		$this->enqueue_admin_script();
 		$s      = self::get_settings();
 		$notice = get_transient( 'fsd_brevo_notice_' . get_current_user_id() );
 		if ( $notice ) {

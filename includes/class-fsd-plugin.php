@@ -37,6 +37,9 @@ class FSD_Plugin {
 	/** @var FSD_Affiliate_Signup */
 	private $affiliate_signup;
 
+	/** @var array Von WordPress tatsächlich vergebene Admin-Hooknamen. */
+	private $page_hooks = array();
+
 	public static function instance() {
 		if ( null === self::$instance ) {
 			self::$instance = new self();
@@ -78,7 +81,7 @@ class FSD_Plugin {
 	public function register_menu() {
 		$capability = 'manage_options';
 
-		add_menu_page(
+		$this->page_hooks['dashboard'] = add_menu_page(
 			__( 'Freemius Dashboard', 'freemius-dashboard' ),
 			__( 'Freemius', 'freemius-dashboard' ),
 			$capability,
@@ -97,7 +100,7 @@ class FSD_Plugin {
 			array( $this, 'render_dashboard' )
 		);
 
-		add_submenu_page(
+		$this->page_hooks['settings'] = add_submenu_page(
 			FSD_Dashboard::PAGE_SLUG,
 			__( 'Einstellungen', 'freemius-dashboard' ),
 			__( 'Einstellungen', 'freemius-dashboard' ),
@@ -106,7 +109,7 @@ class FSD_Plugin {
 			array( $this, 'render_settings' )
 		);
 
-		add_submenu_page(
+		$this->page_hooks['affiliates'] = add_submenu_page(
 			FSD_Dashboard::PAGE_SLUG,
 			__( 'Affiliates', 'freemius-dashboard' ),
 			__( 'Affiliates', 'freemius-dashboard' ),
@@ -115,7 +118,7 @@ class FSD_Plugin {
 			array( $this, 'render_affiliates' )
 		);
 
-		add_submenu_page(
+		$this->page_hooks['emails'] = add_submenu_page(
 			FSD_Dashboard::PAGE_SLUG,
 			__( 'E-Mails', 'freemius-dashboard' ),
 			__( 'E-Mails', 'freemius-dashboard' ),
@@ -124,7 +127,7 @@ class FSD_Plugin {
 			array( $this, 'render_emails' )
 		);
 
-		add_submenu_page(
+		$this->page_hooks['brevo'] = add_submenu_page(
 			FSD_Dashboard::PAGE_SLUG,
 			__( 'Brevo', 'freemius-dashboard' ),
 			__( 'Brevo', 'freemius-dashboard' ),
@@ -241,39 +244,32 @@ class FSD_Plugin {
 	}
 
 	public function enqueue_assets( $hook ) {
-		$dashboard_hook  = 'toplevel_page_' . FSD_Dashboard::PAGE_SLUG;
-		$settings_hook   = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Settings::PAGE_SLUG;
-		$affiliates_hook = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Affiliates::PAGE_SLUG;
-		$emails_hook     = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Email_Settings::PAGE_SLUG;
-		$brevo_hook      = FSD_Dashboard::PAGE_SLUG . '_page_' . FSD_Brevo::PAGE_SLUG;
+		$dashboard_hook  = $this->page_hooks['dashboard'] ?? '';
+		$settings_hook   = $this->page_hooks['settings'] ?? '';
+		$affiliates_hook = $this->page_hooks['affiliates'] ?? '';
+		$emails_hook     = $this->page_hooks['emails'] ?? '';
+		$brevo_hook      = $this->page_hooks['brevo'] ?? '';
+		$current_page    = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$is_dashboard    = $dashboard_hook === $hook || FSD_Dashboard::PAGE_SLUG === $current_page;
+		$is_settings     = $settings_hook === $hook || FSD_Settings::PAGE_SLUG === $current_page;
+		$is_brevo        = $brevo_hook === $hook || FSD_Brevo::PAGE_SLUG === $current_page;
 
-		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $affiliates_hook, $emails_hook, $brevo_hook ), true ) ) {
+		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $affiliates_hook, $emails_hook, $brevo_hook ), true )
+			&& ! in_array( $current_page, array( FSD_Dashboard::PAGE_SLUG, FSD_Settings::PAGE_SLUG, FSD_Affiliates::PAGE_SLUG, FSD_Email_Settings::PAGE_SLUG, FSD_Brevo::PAGE_SLUG ), true ) ) {
 			return;
 		}
 
 		wp_enqueue_style( 'fsd-admin', FSD_PLUGIN_URL . 'assets/css/fsd-admin.css', array(), FSD_VERSION );
 
-		if ( $dashboard_hook === $hook ) {
+		if ( $is_dashboard ) {
 			wp_enqueue_script( 'fsd-chart', FSD_PLUGIN_URL . 'assets/js/fsd-chart.js', array(), FSD_VERSION, true );
 		}
 
-		if ( $brevo_hook === $hook ) {
-			wp_enqueue_script( 'fsd-brevo', FSD_PLUGIN_URL . 'assets/js/fsd-brevo.js', array( 'jquery' ), FSD_VERSION, true );
-			wp_localize_script(
-				'fsd-brevo',
-				'fsdBrevo',
-				array(
-					'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-					'nonce'   => wp_create_nonce( FSD_Brevo_Reconcile::NONCE ),
-					'actions' => array(
-						'reconcile' => FSD_Brevo_Reconcile::AJAX_RECONCILE,
-						'transfer'  => FSD_Brevo_Reconcile::AJAX_TRANSFER,
-					),
-				)
-			);
+		if ( $is_brevo ) {
+			$this->brevo->enqueue_admin_script();
 		}
 
-		if ( $settings_hook === $hook ) {
+		if ( $is_settings ) {
 			wp_enqueue_script( 'fsd-settings', FSD_PLUGIN_URL . 'assets/js/fsd-settings.js', array(), FSD_VERSION, true );
 			wp_localize_script(
 				'fsd-settings',
