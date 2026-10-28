@@ -61,17 +61,23 @@ class FSD_Brevo {
 
 	public static function defaults() {
 		return array(
-			'enabled'    => false,
-			'api_key'    => '',
-			'list_ids'   => '',
-			'reseller'   => 'Freemius',
-			'attributes' => array_keys( self::attributes() ),
+			'enabled'                => false,
+			'api_key'                => '',
+			'marketing_list_ids'     => '',
+			'non_marketing_list_ids' => '',
+			'reseller'               => 'Freemius',
+			'attributes'             => array_keys( self::attributes() ),
 		);
 	}
 
 	public static function get_settings() {
 		$value = FSD_Settings::get_unfiltered_option( self::OPTION_KEY );
-		return wp_parse_args( is_array( $value ) ? $value : array(), self::defaults() );
+		$value = is_array( $value ) ? $value : array();
+		// Bestehende Installationen behalten ihre bisherige Liste als Marketing-Liste.
+		if ( ! isset( $value['marketing_list_ids'] ) && isset( $value['list_ids'] ) ) {
+			$value['marketing_list_ids'] = $value['list_ids'];
+		}
+		return wp_parse_args( $value, self::defaults() );
 	}
 
 	public static function is_active() {
@@ -87,10 +93,11 @@ class FSD_Brevo {
 		$old = self::get_settings();
 		$out = self::defaults();
 
-		$out['enabled']  = ! empty( $input['enabled'] );
-		$out['api_key']  = ! empty( $input['api_key'] ) ? sanitize_text_field( wp_unslash( $input['api_key'] ) ) : $old['api_key'];
-		$out['list_ids'] = isset( $input['list_ids'] ) ? implode( ',', self::parse_list_ids( wp_unslash( $input['list_ids'] ) ) ) : '';
-		$out['reseller'] = isset( $input['reseller'] ) ? sanitize_text_field( wp_unslash( $input['reseller'] ) ) : $out['reseller'];
+		$out['enabled']                = ! empty( $input['enabled'] );
+		$out['api_key']                = ! empty( $input['api_key'] ) ? sanitize_text_field( wp_unslash( $input['api_key'] ) ) : $old['api_key'];
+		$out['marketing_list_ids']     = isset( $input['marketing_list_ids'] ) ? implode( ',', self::parse_list_ids( wp_unslash( $input['marketing_list_ids'] ) ) ) : '';
+		$out['non_marketing_list_ids'] = isset( $input['non_marketing_list_ids'] ) ? implode( ',', self::parse_list_ids( wp_unslash( $input['non_marketing_list_ids'] ) ) ) : '';
+		$out['reseller']               = isset( $input['reseller'] ) ? sanitize_text_field( wp_unslash( $input['reseller'] ) ) : $out['reseller'];
 
 		$allowed           = array_keys( self::attributes() );
 		$selected          = isset( $input['attributes'] ) ? array_map( 'sanitize_key', (array) $input['attributes'] ) : array();
@@ -135,43 +142,60 @@ class FSD_Brevo {
 		$email = strtolower( (string) $user->email );
 
 		if ( 'payment.created' === $type ) {
-			$this->sync_payment( $email, $user, $payment, $objects );
+			$result = $this->sync_payment( $email, $user, $payment, $objects );
+			$this->schedule_retry( $event, $result );
 			return;
 		}
 
 		// Reine Einwilligungs-Events: nur MARKETING_MAILS aktualisieren.
 		$consent = 'user.marketing.opted_in' === $type ? 'YES' : 'NO';
-		$result  = $this->push( $email, array( 'MARKETING_MAILS' => $consent ), false );
+		$result  = $this->push( $email, array( 'MARKETING_MAILS' => $consent ), true );
 		$this->log_result( $result, $email, $type, 'MARKETING_MAILS = ' . $consent );
+		$this->schedule_retry( $event, $result );
+	}
+
+	/** Plant bei Timeouts, 429 und 5xx bis zu drei zeitversetzte Neuversuche. */
+	private function schedule_retry( $event, $result ) {
+		if ( ! FSD_Brevo_Api::is_transient_error( $result ) ) {
+			return;
+		}
+		$attempt = isset( $event->_fsd_brevo_retry ) ? (int) $event->_fsd_brevo_retry : 0;
+		$delays  = array( MINUTE_IN_SECONDS, 5 * MINUTE_IN_SECONDS, 30 * MINUTE_IN_SECONDS );
+		if ( isset( $delays[ $attempt ] ) ) {
+			$event->_fsd_brevo_retry = $attempt + 1;
+			wp_schedule_single_event( time() + $delays[ $attempt ], FSD_Webhook::BREVO_CRON_HOOK, array( $event ) );
+		}
 	}
 
 	private function sync_payment( $email, $user, $payment, $objects ) {
 		$pay_id = ( $payment && ! empty( $payment->id ) ) ? (string) $payment->id : '';
 
 		if ( ! $payment ) {
-			$this->log->add( FSD_Brevo_Log::STATUS_ERROR, $email, 'payment.created', 'Event enthält keine Zahlung.' );
-			return;
+			$result = new WP_Error( 'fsd_brevo_payment_missing', 'Event enthält keine Zahlung.' );
+			$this->log_result( $result, $email, 'payment.created', '' );
+			return $result;
 		}
 		if ( isset( $payment->environment ) && 1 === (int) $payment->environment ) {
 			$this->log->add( FSD_Brevo_Log::STATUS_SKIPPED, $email, 'payment.created', 'Sandbox-Zahlung – nicht übertragen.', $pay_id );
-			return;
+			return true;
 		}
 		// Freemius stellt Webhooks ggf. mehrfach zu – Zahlungen nur einmal aufsummieren.
 		if ( $this->log->is_payment_synced( $pay_id ) ) {
 			$this->log->add( FSD_Brevo_Log::STATUS_SKIPPED, $email, 'payment.created', 'Zahlung wurde bereits übertragen.', $pay_id );
-			return;
+			return true;
 		}
 
 		$contact = $this->api()->get_contact( $email );
 		if ( is_wp_error( $contact ) ) {
 			$this->log->add( FSD_Brevo_Log::STATUS_ERROR, $email, 'payment.created', $contact->get_error_message(), $pay_id );
-			return;
+			return $contact;
 		}
 		$current = ( $contact && isset( $contact->attributes ) ) ? (array) $contact->attributes : array();
 		$values  = $this->values_from_payment( $user, $payment, $objects, $current, null === $contact );
-		$result  = $this->push( $email, $values, true );
+		$result  = $this->push( $email, $values, true, null === $contact );
 
 		$this->log_result( $result, $email, 'payment.created', ( null === $contact ? 'Kontakt angelegt' : 'Kontakt aktualisiert' ), $pay_id );
+		return $result;
 	}
 
 	/**
@@ -210,7 +234,12 @@ class FSD_Brevo {
 	/** YES/NO aus Freemius "is_marketing_allowed"; unbekannt => bei neuen Kontakten NO, sonst unverändert. */
 	public static function consent_value( $user, $is_new ) {
 		if ( isset( $user->is_marketing_allowed ) && null !== $user->is_marketing_allowed ) {
-			return $user->is_marketing_allowed ? 'YES' : 'NO';
+			$value = $user->is_marketing_allowed;
+			if ( is_string( $value ) ) {
+				$value = strtolower( trim( $value ) );
+				return in_array( $value, array( '1', 'true', 'yes', 'on' ), true ) ? 'YES' : 'NO';
+			}
+			return $value ? 'YES' : 'NO';
 		}
 		return $is_new ? 'NO' : '';
 	}
@@ -254,13 +283,39 @@ class FSD_Brevo {
 	 *
 	 * @return array|WP_Error Liste übersprungener Attribute bei Erfolg.
 	 */
-	private function push( $email, $values, $add_to_lists ) {
+	private function push( $email, $values, $add_to_lists, $is_new = null ) {
 		$s                         = self::get_settings();
 		list( $payload, $skipped ) = $this->prepare_attributes( array_intersect_key( $values, array_flip( (array) $s['attributes'] ) ) );
+		$add_ids                   = array();
+		$remove_ids                = array();
+		if ( $add_to_lists && in_array( $values['MARKETING_MAILS'] ?? '', array( 'YES', 'NO' ), true ) ) {
+			$marketing_ids = self::parse_list_ids( $s['marketing_list_ids'] );
+			$no_marketing  = self::parse_list_ids( $s['non_marketing_list_ids'] );
+			$add_ids       = 'YES' === $values['MARKETING_MAILS'] ? $marketing_ids : $no_marketing;
+			$remove_ids    = 'YES' === $values['MARKETING_MAILS'] ? $no_marketing : $marketing_ids;
+			$remove_ids    = array_values( array_diff( $remove_ids, $add_ids ) );
+		}
 
-		$result = $this->api()->upsert_contact( $email, $payload, $add_to_lists ? self::parse_list_ids( $s['list_ids'] ) : array() );
+		// Bei Zahlungen bestehender Kontakte zuerst die idempotente Listenänderung
+		// ausführen. So kann ein späterer Attributfehler den Umsatz nicht verdoppeln.
+		if ( false === $is_new && ( $add_ids || $remove_ids ) ) {
+			$result = $this->api()->update_contact_lists( $email, $add_ids, $remove_ids );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+		}
+
+		$result = $this->api()->upsert_contact( $email, $payload, $add_ids );
 		if ( is_wp_error( $result ) ) {
 			return $result;
+		}
+		// Wenn der Aufrufer den Existenzstatus nicht kennt (z. B. reines
+		// Einwilligungs-Event), erst upserten und anschließend sicher umsortieren.
+		if ( null === $is_new && ( $add_ids || $remove_ids ) ) {
+			$result = $this->api()->update_contact_lists( $email, $add_ids, $remove_ids );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
 		}
 		set_transient( self::PRESENCE_PREFIX . md5( $email ), self::PRESENCE_YES, 6 * HOUR_IN_SECONDS );
 		return $skipped;
@@ -406,7 +461,8 @@ class FSD_Brevo {
 				<table class="form-table">
 					<tr><th>Synchronisierung</th><td><label><input type="checkbox" name="<?php echo esc_attr( $name ); ?>[enabled]" value="1" <?php checked( $s['enabled'] ); ?> /> Käufer nach jedem Kauf in Brevo eintragen</label></td></tr>
 					<tr><th><label for="fsd-brevo-api-key">API-Key</label></th><td><input type="password" autocomplete="new-password" id="fsd-brevo-api-key" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[api_key]" placeholder="<?php echo $s['api_key'] ? esc_attr__( 'Gespeichert – leer lassen zum Beibehalten', 'freemius-dashboard' ) : 'xkeysib-…'; ?>" /><p class="description">Brevo → SMTP &amp; API → API-Keys.</p></td></tr>
-					<tr><th><label for="fsd-brevo-list-ids">Listen-IDs</label></th><td><input id="fsd-brevo-list-ids" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[list_ids]" value="<?php echo esc_attr( $s['list_ids'] ); ?>" placeholder="z. B. 3, 7" /><p class="description">Kommagetrennt. Käufer werden diesen Listen hinzugefügt.</p></td></tr>
+					<tr><th><label for="fsd-brevo-marketing-list-ids">Liste(n) mit Marketing</label></th><td><input id="fsd-brevo-marketing-list-ids" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[marketing_list_ids]" value="<?php echo esc_attr( $s['marketing_list_ids'] ); ?>" placeholder="z. B. 3" /><p class="description">Kommagetrennte Brevo-Listen-IDs für Kontakte mit Marketing-Einwilligung.</p></td></tr>
+					<tr><th><label for="fsd-brevo-non-marketing-list-ids">Liste(n) ohne Marketing</label></th><td><input id="fsd-brevo-non-marketing-list-ids" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[non_marketing_list_ids]" value="<?php echo esc_attr( $s['non_marketing_list_ids'] ); ?>" placeholder="z. B. 7" /><p class="description">Kontakte ohne Einwilligung oder mit Brevo-Abmeldung werden hierhin verschoben und aus der Marketing-Liste entfernt.</p></td></tr>
 					<tr><th><label for="fsd-brevo-reseller">Wert für RESELLER</label></th><td><input id="fsd-brevo-reseller" class="regular-text fsd-input" name="<?php echo esc_attr( $name ); ?>[reseller]" value="<?php echo esc_attr( $s['reseller'] ); ?>" /></td></tr>
 					<tr><th>Attribute</th><td>
 						<?php foreach ( self::attributes() as $key => $label ) : ?>
@@ -432,7 +488,7 @@ class FSD_Brevo {
 			<?php endif; ?>
 
 			<hr /><h2>Käufer abgleichen</h2>
-			<p>Vergleicht alle über die Freemius-Zahlungen auffindbaren Käufer mit Brevo. Fehlende Kontakte können anschließend mit allen Kaufdaten übertragen werden.</p>
+			<p>Gleicht alle über Freemius-Zahlungen auffindbaren Käufer vollständig ab: Kontaktdaten, Marketing-Attribut und beide Listen. Abmeldungen aus Brevo werden dabei nach Freemius übernommen. Nur fehlgeschlagene Kontakte bleiben anschließend zur Wiederholung stehen.</p>
 			<p>
 				<button type="button" class="fsd-btn fsd-btn--tonal" id="fsd-brevo-reconcile">Abgleich starten</button>
 				<span class="fsd-test-result" id="fsd-brevo-progress"></span>
@@ -462,18 +518,19 @@ class FSD_Brevo {
 		if ( ! is_array( $missing ) ) {
 			return;
 		}
-		echo '<h3>Fehlende Kontakte (' . esc_html( count( $missing ) ) . ')</h3>';
+		echo '<h3>Fehlgeschlagene Kontakte (' . esc_html( count( $missing ) ) . ')</h3>';
 		if ( ! $missing ) {
 			return;
 		}
-		echo '<p><button type="button" class="fsd-btn fsd-btn--tonal" id="fsd-brevo-transfer-all">Alle übertragen</button></p>';
-		echo '<table class="fsd-table"><thead><tr><th>E-Mail</th><th>Käufe</th><th>Umsatz</th><th>Marketing</th><th></th></tr></thead><tbody>';
+		echo '<p><button type="button" class="fsd-btn fsd-btn--tonal" id="fsd-brevo-transfer-all">Alle erneut versuchen</button></p>';
+		echo '<table class="fsd-table"><thead><tr><th>E-Mail</th><th>Käufe</th><th>Umsatz</th><th>Marketing</th><th>Fehler</th><th></th></tr></thead><tbody>';
 		foreach ( $missing as $index => $buyer ) {
 			echo '<tr><td><code>' . esc_html( $buyer['email'] ) . '</code></td>';
 			echo '<td>' . esc_html( $buyer['values']['ANZAHL_KAEUFE'] ) . '</td>';
 			echo '<td>' . esc_html( number_format_i18n( $buyer['values']['UMSATZ_GESAMT'], 2 ) ) . '</td>';
-			echo '<td>' . esc_html( $buyer['values']['MARKETING_MAILS'] ) . '</td><td>';
-			$this->render_action_form( 'fsd_brevo_transfer_missing', 'Übertragen', array( 'index' => $index ) );
+			echo '<td>' . esc_html( $buyer['values']['MARKETING_MAILS'] ) . '</td>';
+			echo '<td>' . esc_html( $buyer['error'] ?? '—' ) . '</td><td>';
+			$this->render_action_form( 'fsd_brevo_transfer_missing', 'Erneut versuchen', array( 'index' => $index ) );
 			echo '</td></tr>';
 		}
 		echo '</tbody></table>';
@@ -540,12 +597,33 @@ class FSD_Brevo {
 	 * @return bool|WP_Error
 	 */
 	public function check_presence( $email ) {
-		$found = $this->api()->get_contact( $email, 10 );
+		$found = $this->get_contact( $email );
 		if ( is_wp_error( $found ) ) {
 			return $found;
 		}
 		set_transient( self::PRESENCE_PREFIX . md5( $email ), $found ? self::PRESENCE_YES : self::PRESENCE_NO, HOUR_IN_SECONDS );
 		return (bool) $found;
+	}
+
+	/** Lädt einen Kontakt live samt Listen- und Abmeldestatus. */
+	public function get_contact( $email ) {
+		return $this->api()->get_contact( $email, 10 );
+	}
+
+	/**
+	 * Brevo ist für eine dort erfolgte Abmeldung führend. Berücksichtigt sowohl
+	 * die globale Campaign-Blacklist als auch listenbezogene Abmeldungen.
+	 */
+	public static function is_brevo_opted_out( $contact ) {
+		if ( ! is_object( $contact ) ) {
+			return false;
+		}
+		if ( ! empty( $contact->emailBlacklisted ) ) {
+			return true;
+		}
+		$marketing_ids = self::parse_list_ids( self::get_settings()['marketing_list_ids'] );
+		$unsubscribed  = array_map( 'intval', (array) ( $contact->listUnsubscribed ?? array() ) );
+		return (bool) array_intersect( $marketing_ids, $unsubscribed );
 	}
 
 	/**
@@ -554,7 +632,19 @@ class FSD_Brevo {
 	 * @return array|WP_Error
 	 */
 	public function transfer_buyer( $buyer ) {
-		$result = $this->push( $buyer['email'], $buyer['values'], true );
+		if ( ! empty( $buyer['sync_freemius_opt_out'] ) && ! empty( $buyer['user_id'] ) ) {
+			$fs     = FSD_Settings::get_settings();
+			$api    = new FSD_Api( $fs['product_id'], $fs['public_key'], $fs['secret_key'], $fs['product_id'] );
+			$result = $api->update_user_marketing( $buyer['user_id'], false );
+			if ( is_wp_error( $result ) ) {
+				$this->log_result( $result, $buyer['email'], 'abgleich', 'Brevo-Abmeldung nach Freemius übertragen' );
+				return $result;
+			}
+			delete_transient( 'fsd_user_' . (int) $buyer['user_id'] );
+		}
+
+		$is_new = array_key_exists( 'is_new', $buyer ) ? (bool) $buyer['is_new'] : null;
+		$result = $this->push( $buyer['email'], $buyer['values'], true, $is_new );
 		$this->log_result( $result, $buyer['email'], 'abgleich', 'Kontakt aus Abgleich übertragen' );
 		return $result;
 	}

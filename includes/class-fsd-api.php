@@ -265,6 +265,12 @@ class FSD_Api {
 		return $this->request( $path, 'GET' );
 	}
 
+	/** Aktualisiert die Marketing-Einwilligung eines Produkt-Nutzers. */
+	public function update_user_marketing( $user_id, $allowed ) {
+		$path = $this->product_path( sprintf( 'users/%d.json', (int) $user_id ) );
+		return $this->request( $path, 'PUT', array(), array( 'is_marketing_allowed' => (bool) $allowed ) );
+	}
+
 	/**
 	 * Lädt die Provisionsbedingungen ("Affiliate-Programm") des Produkts – u. a. den
 	 * Standard-Provisionssatz, der gilt, wenn ein Affiliate keine individuelle
