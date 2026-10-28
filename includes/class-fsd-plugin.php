@@ -249,34 +249,27 @@ class FSD_Plugin {
 		$affiliates_hook = $this->page_hooks['affiliates'] ?? '';
 		$emails_hook     = $this->page_hooks['emails'] ?? '';
 		$brevo_hook      = $this->page_hooks['brevo'] ?? '';
+		$current_page    = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$is_dashboard    = $dashboard_hook === $hook || FSD_Dashboard::PAGE_SLUG === $current_page;
+		$is_settings     = $settings_hook === $hook || FSD_Settings::PAGE_SLUG === $current_page;
+		$is_brevo        = $brevo_hook === $hook || FSD_Brevo::PAGE_SLUG === $current_page;
 
-		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $affiliates_hook, $emails_hook, $brevo_hook ), true ) ) {
+		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $affiliates_hook, $emails_hook, $brevo_hook ), true )
+			&& ! in_array( $current_page, array( FSD_Dashboard::PAGE_SLUG, FSD_Settings::PAGE_SLUG, FSD_Affiliates::PAGE_SLUG, FSD_Email_Settings::PAGE_SLUG, FSD_Brevo::PAGE_SLUG ), true ) ) {
 			return;
 		}
 
 		wp_enqueue_style( 'fsd-admin', FSD_PLUGIN_URL . 'assets/css/fsd-admin.css', array(), FSD_VERSION );
 
-		if ( $dashboard_hook === $hook ) {
+		if ( $is_dashboard ) {
 			wp_enqueue_script( 'fsd-chart', FSD_PLUGIN_URL . 'assets/js/fsd-chart.js', array(), FSD_VERSION, true );
 		}
 
-		if ( $brevo_hook === $hook ) {
-			wp_enqueue_script( 'fsd-brevo', FSD_PLUGIN_URL . 'assets/js/fsd-brevo.js', array( 'jquery' ), FSD_VERSION, true );
-			wp_localize_script(
-				'fsd-brevo',
-				'fsdBrevo',
-				array(
-					'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-					'nonce'   => wp_create_nonce( FSD_Brevo_Reconcile::NONCE ),
-					'actions' => array(
-						'reconcile' => FSD_Brevo_Reconcile::AJAX_RECONCILE,
-						'transfer'  => FSD_Brevo_Reconcile::AJAX_TRANSFER,
-					),
-				)
-			);
+		if ( $is_brevo ) {
+			$this->brevo->enqueue_admin_script();
 		}
 
-		if ( $settings_hook === $hook ) {
+		if ( $is_settings ) {
 			wp_enqueue_script( 'fsd-settings', FSD_PLUGIN_URL . 'assets/js/fsd-settings.js', array(), FSD_VERSION, true );
 			wp_localize_script(
 				'fsd-settings',
