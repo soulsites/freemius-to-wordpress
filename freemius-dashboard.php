@@ -33,6 +33,7 @@ require_once FSD_PLUGIN_DIR . 'includes/class-fsd-brevo.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-brevo-reconcile.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-elementor-integration.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-month-filter.php';
+require_once FSD_PLUGIN_DIR . 'includes/class-fsd-power-users.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-dashboard.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-affiliates.php';
 require_once FSD_PLUGIN_DIR . 'includes/class-fsd-affiliate-signup.php';

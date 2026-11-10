@@ -18,8 +18,12 @@ class FSD_Dashboard {
 	/** @var FSD_Brevo */
 	private $brevo;
 
-	public function __construct( FSD_Brevo $brevo ) {
-		$this->brevo = $brevo;
+	/** @var FSD_Power_Users */
+	private $power_users;
+
+	public function __construct( FSD_Brevo $brevo, FSD_Power_Users $power_users ) {
+		$this->brevo       = $brevo;
+		$this->power_users = $power_users;
 		$settings  = FSD_Settings::get_settings();
 		$this->api = new FSD_Api(
 			$settings['product_id'],
@@ -282,6 +286,8 @@ class FSD_Dashboard {
 		}
 		echo '</div>';
 
+		$this->power_users->render();
+
 		echo '</div>';
 	}
 
@@ -420,14 +426,21 @@ class FSD_Dashboard {
 	}
 
 	private function render_totals( $payments ) {
-		$totals = array();
+		$totals  = array();
+		$refunds = array();
 
 		foreach ( $payments as $payment ) {
 			$currency = isset( $payment->currency ) ? strtoupper( $payment->currency ) : '—';
-			if ( ! isset( $totals[ $currency ] ) ) {
-				$totals[ $currency ] = 0.0;
+			$net      = self::net_amount( $payment );
+
+			// Erstattungen nicht von den Einnahmen abziehen (Freemius weist
+			// Einnahmen ohne Erstattungen aus) – sie werden separat angezeigt.
+			if ( self::is_refund( $payment ) ) {
+				$refunds[ $currency ] = ( $refunds[ $currency ] ?? 0.0 ) + $net;
+				continue;
 			}
-			$totals[ $currency ] += self::net_amount( $payment );
+
+			$totals[ $currency ] = ( $totals[ $currency ] ?? 0.0 ) + $net;
 		}
 
 		echo '<div class="fsd-totals">';
@@ -439,6 +452,10 @@ class FSD_Dashboard {
 			foreach ( $totals as $currency => $sum ) {
 				echo '<span class="fsd-totals__value">' . esc_html( number_format_i18n( $sum, 2 ) . ' ' . $currency ) . '</span>';
 			}
+		}
+
+		foreach ( $refunds as $currency => $sum ) {
+			echo '<span class="fsd-totals__label">' . esc_html__( 'Erstattungen', 'freemius-dashboard' ) . ': ' . esc_html( number_format_i18n( $sum, 2 ) . ' ' . $currency ) . '</span>';
 		}
 
 		echo '</div>';
