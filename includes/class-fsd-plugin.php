@@ -31,6 +31,9 @@ class FSD_Plugin {
 	/** @var FSD_Dashboard */
 	private $dashboard;
 
+	/** @var FSD_Power_Users */
+	private $power_users;
+
 	/** @var FSD_Affiliates */
 	private $affiliates;
 
@@ -54,6 +57,7 @@ class FSD_Plugin {
 		$this->webhook          = new FSD_Webhook();
 		$this->brevo            = new FSD_Brevo();
 		$this->brevo_reconcile  = new FSD_Brevo_Reconcile( $this->brevo );
+		$this->power_users      = new FSD_Power_Users( $this->brevo );
 		$this->elementor        = new FSD_Elementor_Integration( $this->brevo );
 		$this->elementor->register();
 		$this->affiliate_signup = new FSD_Affiliate_Signup();
@@ -70,6 +74,7 @@ class FSD_Plugin {
 		add_action( FSD_Webhook::CRON_HOOK, array( $this->webhook, 'notify_purchase' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_fsd_test_connection', array( $this, 'ajax_test_connection' ) );
+		add_action( 'wp_ajax_' . FSD_Power_Users::AJAX_DETAILS, array( $this->power_users, 'ajax_details' ) );
 		add_action( 'admin_post_fsd_send_test_email', array( $this, 'send_test_email' ) );
 		add_action( FSD_Webhook::BREVO_CRON_HOOK, array( $this->brevo, 'handle_event' ) );
 		add_action( 'wp_ajax_' . FSD_Brevo_Reconcile::AJAX_RECONCILE, array( $this->brevo_reconcile, 'ajax_reconcile_step' ) );
@@ -148,7 +153,7 @@ class FSD_Plugin {
 
 	public function render_dashboard() {
 		if ( null === $this->dashboard ) {
-			$this->dashboard = new FSD_Dashboard( $this->brevo );
+			$this->dashboard = new FSD_Dashboard( $this->brevo, $this->power_users );
 		}
 		$this->dashboard->render();
 	}
@@ -272,6 +277,7 @@ class FSD_Plugin {
 
 		if ( $is_dashboard ) {
 			wp_enqueue_script( 'fsd-chart', FSD_PLUGIN_URL . 'assets/js/fsd-chart.js', array(), FSD_VERSION, true );
+			$this->power_users->enqueue_script();
 		}
 
 		if ( $is_brevo ) {

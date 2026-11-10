@@ -338,3 +338,65 @@
 .fsd-affiliate-form__result--error {
 	color: var(--fsd-error);
 }
+
+/* Power-User-Modal */
+.fsd-power-user {
+	cursor: pointer;
+}
+
+.fsd-power-user:hover td,
+.fsd-power-user:focus td {
+	background: var(--fsd-surface-variant);
+}
+
+.fsd-modal[hidden] {
+	display: none;
+}
+
+.fsd-modal {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.4);
+	z-index: 100000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.fsd-modal__box {
+	position: relative;
+	background: #ffffff;
+	border-radius: 20px;
+	padding: 28px;
+	width: min(480px, 92vw);
+	max-height: 85vh;
+	overflow: auto;
+	color: #1a1c1e;
+}
+
+.fsd-modal__close {
+	position: absolute;
+	top: 10px;
+	right: 14px;
+	border: 0;
+	background: none;
+	font-size: 24px;
+	cursor: pointer;
+}
+
+.fsd-modal__list {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 8px 16px;
+	margin: 0;
+}
+
+.fsd-modal__list dt {
+	color: #43474e;
+}
+
+.fsd-modal__list dd {
+	margin: 0;
+	font-weight: 500;
+	word-break: break-word;
+}

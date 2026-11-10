@@ -17,6 +17,7 @@ class FSD_Api {
 	const API_BASE  = 'https://api.freemius.com';
 	const PAGE_SIZE = 50;
 	const MAX_PAGES = 20;
+	const MAX_INSTALL_PAGES = 100;
 
 	/** @var string */
 	private $scope_id;
@@ -249,6 +250,44 @@ class FSD_Api {
 		}
 
 		return ( isset( $result->payments ) && is_array( $result->payments ) ) ? $result->payments : array();
+	}
+
+	/**
+	 * Lädt alle Installationen des Produkts (seitenweise) – schlanke Felder reichen
+	 * für die Auswertung pro Nutzer.
+	 *
+	 * @return array|WP_Error Liste von Install-Objekten oder WP_Error.
+	 */
+	public function get_installs() {
+		$all    = array();
+		$offset = 0;
+
+		for ( $page = 0; $page < self::MAX_INSTALL_PAGES; $page++ ) {
+			$result = $this->request(
+				$this->product_path( 'installs.json' ),
+				'GET',
+				array(
+					'fields' => 'id,user_id,is_active,is_uninstalled',
+					'count'  => self::PAGE_SIZE,
+					'offset' => $offset,
+				)
+			);
+
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+
+			$chunk = ( isset( $result->installs ) && is_array( $result->installs ) ) ? $result->installs : array();
+			$all   = array_merge( $all, $chunk );
+
+			if ( count( $chunk ) < self::PAGE_SIZE ) {
+				break;
+			}
+
+			$offset += self::PAGE_SIZE;
+		}
+
+		return $all;
 	}
 
 	/**
