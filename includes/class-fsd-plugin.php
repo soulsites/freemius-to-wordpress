@@ -37,6 +37,9 @@ class FSD_Plugin {
 	/** @var FSD_Affiliates */
 	private $affiliates;
 
+	/** @var FSD_Coupons */
+	private $coupons;
+
 	/** @var FSD_Affiliate_Signup */
 	private $affiliate_signup;
 
@@ -61,6 +64,7 @@ class FSD_Plugin {
 		$this->elementor        = new FSD_Elementor_Integration( $this->brevo );
 		$this->elementor->register();
 		$this->affiliate_signup = new FSD_Affiliate_Signup();
+		$this->coupons          = new FSD_Coupons();
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this->settings, 'register' ) );
@@ -83,6 +87,7 @@ class FSD_Plugin {
 		add_action( FSD_Brevo_Reconcile::DAILY_STEP_HOOK, array( $this->brevo_reconcile, 'run_daily_step' ) );
 		add_action( 'admin_post_fsd_brevo_transfer_missing', array( $this->brevo, 'transfer_missing' ) );
 		add_action( 'admin_post_fsd_brevo_test_connection', array( $this->brevo, 'test_connection' ) );
+		add_action( 'admin_post_' . FSD_Coupons::BULK_ACTION, array( $this->coupons, 'handle_bulk' ) );
 		add_action( 'admin_post_fsd_brevo_clear_log', array( $this->brevo, 'clear_log' ) );
 	}
 
@@ -130,6 +135,15 @@ class FSD_Plugin {
 			$capability,
 			FSD_Affiliates::PAGE_SLUG,
 			array( $this, 'render_affiliates' )
+		);
+
+		$this->page_hooks['coupons'] = add_submenu_page(
+			FSD_Dashboard::PAGE_SLUG,
+			__( 'Gutscheine', 'freemius-dashboard' ),
+			__( 'Gutscheine', 'freemius-dashboard' ),
+			$capability,
+			FSD_Coupons::PAGE_SLUG,
+			array( $this->coupons, 'render' )
 		);
 
 		$this->page_hooks['emails'] = add_submenu_page(
@@ -263,13 +277,15 @@ class FSD_Plugin {
 		$affiliates_hook = $this->page_hooks['affiliates'] ?? '';
 		$emails_hook     = $this->page_hooks['emails'] ?? '';
 		$brevo_hook      = $this->page_hooks['brevo'] ?? '';
+		$coupons_hook    = $this->page_hooks['coupons'] ?? '';
 		$current_page    = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$is_dashboard    = $dashboard_hook === $hook || FSD_Dashboard::PAGE_SLUG === $current_page;
 		$is_settings     = $settings_hook === $hook || FSD_Settings::PAGE_SLUG === $current_page;
 		$is_brevo        = $brevo_hook === $hook || FSD_Brevo::PAGE_SLUG === $current_page;
+		$is_coupons      = $coupons_hook === $hook || FSD_Coupons::PAGE_SLUG === $current_page;
 
-		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $affiliates_hook, $emails_hook, $brevo_hook ), true )
-			&& ! in_array( $current_page, array( FSD_Dashboard::PAGE_SLUG, FSD_Settings::PAGE_SLUG, FSD_Affiliates::PAGE_SLUG, FSD_Email_Settings::PAGE_SLUG, FSD_Brevo::PAGE_SLUG ), true ) ) {
+		if ( ! in_array( $hook, array( $dashboard_hook, $settings_hook, $affiliates_hook, $emails_hook, $brevo_hook, $coupons_hook ), true )
+			&& ! in_array( $current_page, array( FSD_Dashboard::PAGE_SLUG, FSD_Settings::PAGE_SLUG, FSD_Affiliates::PAGE_SLUG, FSD_Email_Settings::PAGE_SLUG, FSD_Brevo::PAGE_SLUG, FSD_Coupons::PAGE_SLUG ), true ) ) {
 			return;
 		}
 
@@ -282,6 +298,10 @@ class FSD_Plugin {
 
 		if ( $is_brevo ) {
 			$this->brevo->enqueue_admin_script();
+		}
+
+		if ( $is_coupons ) {
+			$this->coupons->enqueue_script();
 		}
 
 		if ( $is_settings ) {

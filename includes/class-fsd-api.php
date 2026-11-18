@@ -410,4 +410,52 @@ class FSD_Api {
 
 		return $this->request( $path, 'POST', array(), $body );
 	}
+
+	/**
+	 * Lädt alle Gutscheine des Produkts (seitenweise).
+	 *
+	 * @return array|WP_Error Liste von Coupon-Objekten oder WP_Error.
+	 */
+	public function get_coupons() {
+		$all    = array();
+		$offset = 0;
+
+		for ( $page = 0; $page < self::MAX_PAGES; $page++ ) {
+			$result = $this->request(
+				$this->product_path( 'coupons.json' ),
+				'GET',
+				array(
+					'count'  => self::PAGE_SIZE,
+					'offset' => $offset,
+				)
+			);
+
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+
+			$chunk = ( isset( $result->coupons ) && is_array( $result->coupons ) ) ? $result->coupons : array();
+			$all   = array_merge( $all, $chunk );
+
+			if ( count( $chunk ) < self::PAGE_SIZE ) {
+				break;
+			}
+
+			$offset += self::PAGE_SIZE;
+		}
+
+		return $all;
+	}
+
+	/** Aktiviert bzw. deaktiviert einen Gutschein. */
+	public function update_coupon_active( $coupon_id, $active ) {
+		$path = $this->product_path( sprintf( 'coupons/%d.json', (int) $coupon_id ) );
+		return $this->request( $path, 'PUT', array(), array( 'is_active' => (bool) $active ) );
+	}
+
+	/** Löscht einen Gutschein endgültig. */
+	public function delete_coupon( $coupon_id ) {
+		$path = $this->product_path( sprintf( 'coupons/%d.json', (int) $coupon_id ) );
+		return $this->request( $path, 'DELETE' );
+	}
 }

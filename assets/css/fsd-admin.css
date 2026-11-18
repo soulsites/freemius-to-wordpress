@@ -400,3 +400,13 @@
 	font-weight: 500;
 	word-break: break-word;
 }
+
+.fsd-bulk {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.fsd-table__check {
+	width: 32px;
+}

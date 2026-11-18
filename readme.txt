@@ -4,7 +4,7 @@ Tags: freemius, sales, dashboard, api
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.11.0
+Stable tag: 1.12.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -64,6 +64,9 @@ Der Endpoint akzeptiert ausschließlich POST-Anfragen. Ein direkter Aufruf der W
 3. Neue Bewerbungen werden mit Status „Ausstehend“ bei Freemius angelegt und erscheinen unter „Freemius → Affiliates“ sowie im Freemius Developer-Dashboard zur Freigabe. Nach der Freigabe verschickt Freemius automatisch eine E-Mail mit dem Zugang zum Affiliate-Dashboard.
 
 == Changelog ==
+
+= 1.12.0 =
+* Neu: Unterseite „Freemius → Gutscheine“ mit Tabelle aller Freemius-Gutscheine (Code, Status, Rabatt, Einlösungen, Gültigkeit, Zielgruppe, Optionen). Gutscheine sind markierbar und per Massenaktion aktivierbar, deaktivierbar und löschbar.
 
 = 1.11.0 =
 * Neu: Täglicher automatischer Brevo-Abgleich über WP-Cron. Große Datenbestände werden in kurzen Hintergrund-Batches verarbeitet; Zeitpunkt und Ergebnis erscheinen auf der Brevo-Seite und im Protokoll.
